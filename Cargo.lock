@@ -3734,7 +3734,7 @@ dependencies = [
 
 [[package]]
 name = "pointory"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "dirs",
  "enigo",
@@ -3747,6 +3747,7 @@ dependencies = [
  "slint-build",
  "uuid",
  "windows-sys 0.61.2",
+ "x11rb",
 ]
 
 [[package]]
@@ -4433,6 +4434,7 @@ dependencies = [
  "const-field-offset",
  "i-slint-backend-linuxkms",
  "i-slint-backend-selector",
+ "i-slint-backend-winit",
  "i-slint-common",
  "i-slint-core",
  "i-slint-core-macros",

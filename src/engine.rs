@@ -168,16 +168,12 @@ impl Drop for Engine {
 }
 
 trait TaskInput {
-    fn position(&mut self) -> Result<(i32, i32), String>;
     fn sample(&mut self, x: i32, y: i32) -> Result<RgbColor, String>;
     fn move_to(&mut self, x: i32, y: i32) -> Result<(), String>;
     fn click(&mut self, button: MouseButton) -> Result<(), String>;
 }
 
 impl TaskInput for Enigo {
-    fn position(&mut self) -> Result<(i32, i32), String> {
-        platform::mouse_position(self)
-    }
     fn sample(&mut self, x: i32, y: i32) -> Result<RgbColor, String> {
         platform::sample_pixel(x, y)
     }
@@ -216,12 +212,13 @@ fn perform_iteration(
     if stop.load(Ordering::Acquire) {
         return Ok(Iteration::Stopped);
     }
-    // Following clicks without a color condition need no cursor-position support.
+    let target = task.target();
+    if !task.is_builtin() && target.is_none() {
+        return Err("请设置点击位置。".into());
+    }
+    // Only the built-in clicker follows the cursor, without reading its coordinates.
     if let Some(expected) = task.color {
-        let point = match task.target() {
-            Some(point) => point,
-            None => input.position()?,
-        };
+        let point = target.ok_or_else(|| "颜色检测任务必须设置点击位置。".to_string())?;
         if !expected.matches(input.sample(point.0, point.1)?, task.color_tolerance) {
             return Ok(Iteration::Skipped);
         }
@@ -229,7 +226,7 @@ fn perform_iteration(
     if stop.load(Ordering::Acquire) {
         return Ok(Iteration::Stopped);
     }
-    if let Some((x, y)) = task.target() {
+    if let Some((x, y)) = target {
         input.move_to(x, y)?;
     }
     if stop.load(Ordering::Acquire) {
@@ -310,6 +307,7 @@ fn to_enigo_button(button: MouseButton) -> Button {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::Position;
     use std::sync::mpsc;
 
     #[derive(Default)]
@@ -318,13 +316,11 @@ mod tests {
         moves: Vec<(i32, i32)>,
         stop_on_move: Option<Arc<AtomicBool>>,
         stop_on_sample: Option<Arc<AtomicBool>>,
+        stop_on_click: Option<Arc<AtomicBool>>,
         fail_click: bool,
     }
 
     impl TaskInput for FakeInput {
-        fn position(&mut self) -> Result<(i32, i32), String> {
-            Err("当前输入后端不支持读取鼠标坐标".into())
-        }
         fn sample(&mut self, _: i32, _: i32) -> Result<RgbColor, String> {
             if let Some(stop) = &self.stop_on_sample {
                 stop.store(true, Ordering::Release);
@@ -347,13 +343,36 @@ mod tests {
                 return Err("鼠标点击失败：测试错误".into());
             }
             self.clicks += 1;
+            if let Some(stop) = &self.stop_on_click {
+                stop.store(true, Ordering::Release);
+            }
             Ok(())
         }
     }
 
     #[test]
-    fn following_click_does_not_require_cursor_position_and_respects_limit() {
+    fn builtin_following_click_needs_no_position_and_stops_after_input() {
+        let task = Task::clicker();
+        task.validate().unwrap();
+        let stop = Arc::new(AtomicBool::new(false));
+        let runtime = Mutex::new(HashMap::new());
+        let mut input = FakeInput {
+            stop_on_click: Some(Arc::clone(&stop)),
+            ..Default::default()
+        };
+        execute_task(&task, &stop, &runtime, &mut input);
+        assert_eq!(input.clicks, 1);
+        assert!(input.moves.is_empty());
+        let runtime = runtime.lock().unwrap();
+        let state = runtime.get(&task.id).unwrap();
+        assert!(!state.running);
+        assert_eq!(state.message, "已停止");
+    }
+
+    #[test]
+    fn custom_click_moves_to_its_fixed_position_and_respects_limit() {
         let mut task = Task::new(1);
+        task.position = Some(Position { x: -500, y: 200 });
         task.min_interval_ms = 20;
         task.max_clicks = 2;
         let runtime = Mutex::new(HashMap::new());
@@ -361,6 +380,7 @@ mod tests {
         execute_task(&task, &AtomicBool::new(false), &runtime, &mut input);
         let state = runtime.lock().unwrap().get(&task.id).unwrap().clone();
         assert_eq!(input.clicks, 2);
+        assert_eq!(input.moves, vec![(-500, 200), (-500, 200)]);
         assert_eq!(state.clicks, 2);
         assert!(!state.running);
         assert_eq!(state.message, "已完成");
@@ -370,8 +390,7 @@ mod tests {
     fn stopping_during_positioning_prevents_the_click() {
         let stop = Arc::new(AtomicBool::new(false));
         let mut task = Task::new(1);
-        task.x = Some(-500);
-        task.y = Some(200);
+        task.position = Some(Position { x: -500, y: 200 });
         let mut input = FakeInput {
             stop_on_move: Some(Arc::clone(&stop)),
             ..Default::default()
@@ -388,8 +407,7 @@ mod tests {
     fn color_mismatch_skips_without_moving_or_clicking() {
         let stop = Arc::new(AtomicBool::new(false));
         let mut task = Task::new(1);
-        task.x = Some(5);
-        task.y = Some(8);
+        task.position = Some(Position { x: 5, y: 8 });
         task.color = Some(RgbColor {
             red: 255,
             green: 255,
@@ -408,7 +426,8 @@ mod tests {
 
     #[test]
     fn native_failure_is_retained_in_finished_runtime() {
-        let task = Task::new(1);
+        let mut task = Task::new(1);
+        task.position = Some(Position { x: 0, y: 0 });
         let runtime = Mutex::new(HashMap::new());
         let mut input = FakeInput {
             fail_click: true,
@@ -420,6 +439,18 @@ mod tests {
         assert!(!state.running);
         assert_eq!(state.clicks, 0);
         assert_eq!(state.message, "鼠标点击失败：测试错误");
+    }
+
+    #[test]
+    fn custom_task_without_position_never_clicks_or_starts() {
+        let task = Task::new(1);
+        let mut input = FakeInput::default();
+        assert!(perform_iteration(&task, &AtomicBool::new(false), &mut input).is_err());
+        assert!(input.moves.is_empty());
+        assert_eq!(input.clicks, 0);
+        let engine = Engine::default();
+        assert!(engine.start(task).unwrap_err().contains("请设置点击位置"));
+        assert_eq!(engine.active_count(), 0);
     }
 
     #[test]

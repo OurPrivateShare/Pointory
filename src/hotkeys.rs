@@ -3,12 +3,10 @@ use global_hotkey::{GlobalHotKeyManager, hotkey::HotKey};
 use std::collections::BTreeMap;
 
 pub const STOP_ALL: &str = "CTRL+ALT+ESC";
-pub const PICK: &str = "F8";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Action {
     ToggleTask(String),
-    Pick,
     StopAll,
 }
 
@@ -33,23 +31,15 @@ fn parse(value: &str) -> Result<HotKey, String> {
 }
 
 fn safety_bindings() -> Bindings {
-    let mut result = BTreeMap::new();
-    for (label, action) in [(STOP_ALL, Action::StopAll), (PICK, Action::Pick)] {
-        let hotkey = parse(label).expect("built-in shortcut is valid");
-        result.insert(
-            hotkey.id(),
-            Binding {
-                hotkey,
-                action,
-                label: if label == STOP_ALL {
-                    "全部停止".into()
-                } else {
-                    "取点 / 吸色".into()
-                },
-            },
-        );
-    }
-    result
+    let hotkey = parse(STOP_ALL).expect("built-in shortcut is valid");
+    BTreeMap::from([(
+        hotkey.id(),
+        Binding {
+            hotkey,
+            action: Action::StopAll,
+            label: "全部停止".into(),
+        },
+    )])
 }
 
 fn bindings(config: &AppConfig) -> Result<Bindings, String> {
@@ -332,7 +322,7 @@ impl Drop for Hotkeys {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Task;
+    use crate::model::{Position, Task};
     use std::cell::RefCell;
     use std::collections::BTreeSet;
 
@@ -366,6 +356,7 @@ mod tests {
         let mut config = AppConfig::default();
         for (index, value) in values.iter().enumerate() {
             let mut task = Task::new(index + 1);
+            task.position = Some(Position { x: 100, y: 100 });
             task.hotkey = (*value).into();
             config.tasks.push(task);
         }
@@ -379,14 +370,26 @@ mod tests {
     }
 
     #[test]
-    fn reserved_shortcuts_cannot_be_assigned_to_tasks() {
-        for value in ["f8", "Alt+Control+Escape"] {
+    fn global_stop_shortcut_cannot_be_assigned_to_tasks() {
+        for value in ["CTRL+ALT+ESC", "Alt+Control+Escape"] {
             assert!(
                 validate(&config_with_hotkeys(&[value]))
                     .unwrap_err()
                     .contains("冲突")
             );
         }
+    }
+
+    #[test]
+    fn f8_is_available_as_a_task_shortcut() {
+        let config = config_with_hotkeys(&["F8"]);
+        validate(&config).unwrap();
+        let registrar = FakeRegistrar::default();
+        let state = RegistrationState::start(&registrar, bindings(&config).unwrap());
+        assert_eq!(
+            state.action(parse("F8").unwrap().id()),
+            Some(Action::ToggleTask(config.tasks[1].id.clone()))
+        );
     }
 
     #[test]
@@ -493,7 +496,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_startup_keeps_safety_keys_and_accepts_corrected_task_shortcuts() {
+    fn invalid_startup_keeps_stop_key_and_accepts_corrected_task_shortcuts() {
         let registrar = FakeRegistrar::default();
         let mut config = AppConfig::default();
         config.tasks[0].hotkey = "invalid shortcut".into();
@@ -504,7 +507,8 @@ mod tests {
             state.action(parse(STOP_ALL).unwrap().id()),
             Some(Action::StopAll)
         );
-        assert_eq!(state.action(parse(PICK).unwrap().id()), Some(Action::Pick));
+        assert_eq!(state.action(parse("F8").unwrap().id()), None);
+        assert_eq!(state.active.len(), 1);
         assert_eq!(state.action(parse("F1").unwrap().id()), None);
 
         config.tasks[0].hotkey = "F1".into();

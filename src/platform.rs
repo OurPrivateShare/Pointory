@@ -1,6 +1,10 @@
 use crate::model::RgbColor;
 use enigo::{Enigo, Mouse, Settings};
 use screenshots::{Screen, image::RgbaImage};
+use std::{
+    sync::{Mutex, OnceLock},
+    time::{Duration, Instant},
+};
 
 const LENS_RADIUS: i32 = 8;
 const LENS_SCALE: usize = 8;
@@ -114,7 +118,55 @@ struct ScreenGeometry {
     scale: f32,
 }
 
+struct ScreenCache {
+    updated: Instant,
+    screens: Vec<ScreenGeometry>,
+}
+
+static SCREEN_CACHE: OnceLock<Mutex<Option<ScreenCache>>> = OnceLock::new();
+
+pub fn screen_bounds(x: i32, y: i32) -> Result<(i32, i32, u32, u32), String> {
+    let mut cache = SCREEN_CACHE
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    let refresh = cache.as_ref().is_none_or(|cached| {
+        cached.updated.elapsed() >= Duration::from_secs(5)
+            || !cached.screens.iter().any(|screen| screen.contains(x, y))
+    });
+    if refresh {
+        let screens = Screen::all().map_err(|error| format!("定位屏幕失败：{error}"))?;
+        *cache = Some(ScreenCache {
+            updated: Instant::now(),
+            screens: screens.iter().map(ScreenGeometry::for_screen).collect(),
+        });
+    }
+    cache
+        .as_ref()
+        .and_then(|cached| cached.screens.iter().find(|screen| screen.contains(x, y)))
+        .ok_or_else(|| "目标坐标不在任何屏幕上。".to_string())?
+        .physical_bounds()
+}
+
 impl ScreenGeometry {
+    fn physical_bounds(self) -> Result<(i32, i32, u32, u32), String> {
+        if self.width == 0 || self.height == 0 || !self.scale.is_finite() || self.scale <= 0.0 {
+            return Err("屏幕尺寸或缩放比例无效。".into());
+        }
+        let scale = f64::from(self.scale);
+        let left = (f64::from(self.x) * scale) as i64;
+        let top = (f64::from(self.y) * scale) as i64;
+        let right = ((f64::from(self.x) + f64::from(self.width)) * scale) as i64;
+        let bottom = ((f64::from(self.y) + f64::from(self.height)) * scale) as i64;
+        let invalid = || "屏幕物理范围超出系统坐标限制。".to_string();
+        Ok((
+            i32::try_from(left).map_err(|_| invalid())?,
+            i32::try_from(top).map_err(|_| invalid())?,
+            u32::try_from(right - left).map_err(|_| invalid())?,
+            u32::try_from(bottom - top).map_err(|_| invalid())?,
+        ))
+    }
+
     fn for_screen(screen: &Screen) -> Self {
         let info = screen.display_info;
         Self {

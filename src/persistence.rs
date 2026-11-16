@@ -9,12 +9,12 @@ use uuid::Uuid;
 pub fn config_path() -> PathBuf {
     if let Some(directory) = std::env::var_os("POINTORY_CONFIG_DIR").filter(|path| !path.is_empty())
     {
-        return PathBuf::from(directory).join("settings.json");
+        return PathBuf::from(directory).join("config.json");
     }
     let base = dirs::config_dir()
         .or_else(dirs::data_local_dir)
         .unwrap_or_else(std::env::temp_dir);
-    base.join("Pointory").join("settings.json")
+    base.join("Pointory").join("config.json")
 }
 
 pub fn load() -> Result<AppConfig, String> {
@@ -108,7 +108,7 @@ fn replace_file(source: &Path, destination: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Task;
+    use crate::model::{Position, Task};
 
     struct TestDirectory(PathBuf);
 
@@ -120,7 +120,7 @@ mod tests {
         }
 
         fn config_path(&self) -> PathBuf {
-            self.0.join("settings.json")
+            self.0.join("config.json")
         }
     }
 
@@ -149,18 +149,21 @@ mod tests {
         save_to(&path, &config).unwrap();
         config.tasks[0].min_interval_ms = 250;
         config.tasks[0].hotkey = "F3".into();
-        config.tasks.push(Task::new(1));
+        let mut custom = Task::new(1);
+        custom.position = Some(Position { x: -400, y: 600 });
+        config.tasks.push(custom);
         save_to(&path, &config).unwrap();
         let loaded = load_from(&path).unwrap();
         assert_eq!(loaded.tasks.len(), 2);
         assert_eq!(loaded.tasks[0].min_interval_ms, 250);
         assert_eq!(loaded.tasks[0].hotkey, "F3");
         assert_eq!(loaded.tasks[1].id, config.tasks[1].id);
+        assert_eq!(loaded.tasks[1].target(), Some((-400, 600)));
         assert_eq!(fs::read_dir(&directory.0).unwrap().count(), 1);
     }
 
     #[test]
-    fn damaged_and_legacy_files_are_rejected_and_never_overwritten() {
+    fn damaged_and_unsupported_files_are_rejected_and_never_overwritten() {
         let directory = TestDirectory::new();
         let path = directory.config_path();
         for contents in [
@@ -195,12 +198,5 @@ mod tests {
         fs::write(&path, "original").unwrap();
         assert!(replace_file(&directory.0.join("missing.tmp"), &path).is_err());
         assert_eq!(fs::read_to_string(&path).unwrap(), "original");
-    }
-
-    #[test]
-    fn old_tasks_json_is_not_loaded() {
-        let directory = TestDirectory::new();
-        fs::write(directory.0.join("tasks.json"), r#"{"tasks":[]}"#).unwrap();
-        assert_eq!(load_from(&directory.config_path()).unwrap().tasks.len(), 1);
     }
 }

@@ -3,34 +3,41 @@
 mod engine;
 mod hotkeys;
 mod instance;
+mod magnifier;
 mod model;
 mod persistence;
+mod picker;
 mod platform;
+mod preview;
 
 slint::include_modules!();
 
 use engine::Engine;
 use global_hotkey::{GlobalHotKeyEvent, HotKeyState};
 use hotkeys::{Action, Hotkeys};
-use model::{AppConfig, MouseButton, RgbColor, Task};
-use platform::PixelPreview;
-use slint::{Model, ModelRc, Rgba8Pixel, SharedPixelBuffer, Timer, TimerMode, VecModel};
+use model::{AppConfig, MouseButton, Position, RgbColor, Task};
+use preview::{PreviewService, Update};
+use slint::winit_030::WinitWindowAccessor;
+use slint::{Model, ModelRc, Timer, TimerMode, VecModel};
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     rc::Rc,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
-    },
-    thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 #[derive(Clone, Copy)]
 enum PickerMode {
-    Off = 0,
-    Position = 1,
-    Color = 2,
+    Position,
+    Color,
+}
+
+struct ActivePick {
+    mode: PickerMode,
+    token: u64,
+    input: Option<picker::PickerSession>,
+    color_sample: Option<picker::Selection>,
+    preview_started: bool,
+    ready_at: Instant,
 }
 
 #[derive(Clone)]
@@ -45,10 +52,14 @@ struct Controller {
     deleting: RefCell<Option<String>>,
     engine: Engine,
     hotkeys: RefCell<Hotkeys>,
-    picker: Picker,
+    picking: RefCell<Option<ActivePick>>,
+    next_pick_token: Cell<u64>,
+    preview: PreviewService,
+    magnifier: MagnifierWindow,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    magnifier::configure_backend()?;
     let _instance = match instance::acquire() {
         Ok(lock) => lock,
         Err(message) => {
@@ -82,7 +93,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         deleting: RefCell::new(None),
         engine: Engine::default(),
         hotkeys: RefCell::new(hotkeys),
-        picker: Picker::new()?,
+        picking: RefCell::new(None),
+        next_pick_token: Cell::new(0),
+        preview: PreviewService::new()?,
+        magnifier: magnifier::new_window()?,
     });
     let ui = AppWindow::new()?;
     if !warning.is_empty() {
@@ -125,16 +139,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     bind!(on_pick_position, pick_position);
     bind!(on_pick_color, pick_color);
     bind!(on_cancel_picker, cancel_picker);
-    ui.on_clear_target({
-        let weak = ui.as_weak();
-        move || {
-            if let Some(ui) = weak.upgrade() {
-                ui.set_target_configured(false);
-                ui.set_target_x("".into());
-                ui.set_target_y("".into());
-            }
-        }
-    });
     ui.on_cycle_button({
         let weak = ui.as_weak();
         move || {
@@ -149,8 +153,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    ui.window().on_close_requested({
+        let controller = Rc::clone(&controller);
+        move || {
+            controller.shutdown_picker();
+            controller.engine.shutdown();
+            slint::CloseRequestResponse::HideWindow
+        }
+    });
     let timer = Timer::default();
-    timer.start(TimerMode::Repeated, Duration::from_millis(80), {
+    timer.start(TimerMode::Repeated, Duration::from_millis(50), {
         let weak = ui.as_weak();
         let controller = Rc::clone(&controller);
         move || {
@@ -162,7 +174,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = ui.run();
     timer.stop();
     controller.engine.shutdown();
-    controller.picker.cancel();
+    controller.shutdown_picker();
     result?;
     Ok(())
 }
@@ -203,7 +215,7 @@ impl Controller {
     }
 
     fn open_editor(&self, ui: &AppWindow, draft: Draft) {
-        self.picker.cancel();
+        self.cancel_picker(ui);
         populate_editor(ui, &draft.task);
         ui.set_is_new(draft.is_new);
         ui.set_simple_editor(draft.task.is_builtin());
@@ -214,7 +226,7 @@ impl Controller {
     }
 
     fn cancel_editor(&self, ui: &AppWindow) {
-        self.picker.cancel();
+        self.cancel_picker(ui);
         self.draft.borrow_mut().take();
         ui.set_picker_active(false);
         ui.set_editor_open(false);
@@ -394,32 +406,165 @@ impl Controller {
             return;
         }
         self.engine.stop_all();
+        self.cancel_picker(ui);
+        let input = match picker::start() {
+            Ok(input) => input,
+            Err(error) => {
+                ui.set_editor_error(error.into());
+                return;
+            }
+        };
+        let token = self.next_pick_token.get().wrapping_add(1);
+        self.next_pick_token.set(token);
+        *self.picking.borrow_mut() = Some(ActivePick {
+            mode,
+            token,
+            input: Some(input),
+            color_sample: None,
+            preview_started: false,
+            ready_at: Instant::now() + Duration::from_millis(250),
+        });
         ui.set_editor_error("".into());
-        ui.set_preview_position("正在读取屏幕…".into());
-        self.picker.start(mode);
         ui.set_picker_active(true);
+        ui.window().set_minimized(true);
     }
 
     fn cancel_picker(&self, ui: &AppWindow) {
-        self.picker.cancel();
+        let active = self.picking.borrow_mut().take().is_some();
+        self.preview.stop();
+        let _ = self.magnifier.hide();
         ui.set_picker_active(false);
+        if active {
+            ui.window().set_minimized(false);
+            ui.window()
+                .with_winit_window(|window| window.focus_window());
+        }
     }
 
-    fn tick(&self, ui: &AppWindow) {
-        if ui.get_picker_active() {
-            let preview = self.picker.latest.lock().unwrap().take();
-            if let Some((_, preview)) = preview.filter(|(generation, _)| {
-                *generation == self.picker.generation.load(Ordering::Acquire)
-            }) {
-                match preview {
-                    Ok(preview) => update_preview(ui, &preview),
-                    Err(error) => {
-                        ui.set_editor_error(error.into());
-                        self.cancel_picker(ui);
+    fn shutdown_picker(&self) {
+        self.picking.borrow_mut().take();
+        self.preview.stop();
+        let _ = self.magnifier.hide();
+    }
+
+    fn poll_picker(&self, ui: &AppWindow) {
+        let event = self
+            .picking
+            .borrow()
+            .as_ref()
+            .and_then(|active| active.input.as_ref())
+            .and_then(picker::PickerSession::try_event);
+        match event {
+            Some(picker::Event::Selected(point)) => {
+                let selection = {
+                    let mut picking = self.picking.borrow_mut();
+                    picking.as_mut().map(|active| {
+                        active.input.take();
+                        active.mode
+                    })
+                };
+                if let Some(mode) = selection {
+                    let _ = self.magnifier.hide();
+                    match mode {
+                        PickerMode::Position => {
+                            ui.set_target_x(point.x.to_string().into());
+                            ui.set_target_y(point.y.to_string().into());
+                            self.cancel_picker(ui);
+                            ui.set_editor_error("".into());
+                        }
+                        PickerMode::Color => {
+                            self.preview.stop();
+                            if let Some(active) = self.picking.borrow_mut().as_mut() {
+                                active.color_sample = Some(point);
+                            }
+                        }
                     }
                 }
             }
+            Some(picker::Event::Cancelled) => self.cancel_picker(ui),
+            Some(picker::Event::Error(error)) => {
+                self.cancel_picker(ui);
+                ui.set_editor_error(error.into());
+            }
+            None => {}
         }
+        {
+            let mut picking = self.picking.borrow_mut();
+            if let Some(active) = picking.as_mut()
+                && active.input.is_none()
+                && Instant::now() >= active.ready_at
+                && let Some(point) = active.color_sample.take()
+            {
+                // Let the minimize animation finish before reading the desktop,
+                // even if the confirmation click arrived unusually quickly.
+                active.ready_at = Instant::now() + Duration::from_secs(5);
+                self.preview.sample_color(active.token, point.x, point.y);
+            }
+        }
+        let timed_out = self.picking.borrow().as_ref().is_some_and(|active| {
+            active.input.is_none()
+                && active.color_sample.is_none()
+                && Instant::now() >= active.ready_at
+        });
+        if timed_out {
+            self.cancel_picker(ui);
+            ui.set_editor_error("吸取颜色超时，请重新取样或手工填写颜色。".into());
+        }
+        {
+            let mut picking = self.picking.borrow_mut();
+            if let Some(active) = picking.as_mut()
+                && active.input.is_some()
+                && !active.preview_started
+                && Instant::now() >= active.ready_at
+            {
+                active.preview_started = true;
+                self.preview.start(active.token);
+            }
+        }
+        if let Some(update) = self.preview.take_update() {
+            let active_token = self.picking.borrow().as_ref().map(|active| active.token);
+            match update {
+                Update::Frame { token, preview } if active_token == Some(token) => {
+                    // Keep the lens off the sampled pixel and let clicks pass through it.
+                    if self
+                        .picking
+                        .borrow()
+                        .as_ref()
+                        .is_some_and(|active| active.input.is_some())
+                        && let Err(error) = magnifier::update(&self.magnifier, &preview)
+                    {
+                        self.preview.stop();
+                        let _ = self.magnifier.hide();
+                        ui.set_editor_error(
+                            format!("放大镜不可用：{error}；仍可左键确认位置，或 Esc 取消。")
+                                .into(),
+                        );
+                    }
+                }
+                Update::Color { token, result } if active_token == Some(token) => {
+                    self.cancel_picker(ui);
+                    match result {
+                        Ok(color) => {
+                            ui.set_color_hex(color.to_hex().into());
+                            ui.set_match_color(true);
+                            ui.set_editor_error("".into());
+                        }
+                        Err(error) => ui.set_editor_error(error.into()),
+                    }
+                }
+                Update::Error { token, message } if active_token == Some(token) => {
+                    self.preview.stop();
+                    let _ = self.magnifier.hide();
+                    ui.set_editor_error(
+                        format!("放大镜不可用：{message}；仍可左键确认位置，或 Esc 取消。").into(),
+                    );
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn tick(&self, ui: &AppWindow) {
         while let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
             if event.state() != HotKeyState::Pressed {
                 continue;
@@ -428,29 +573,10 @@ impl Controller {
             match action {
                 Some(Action::ToggleTask(id)) => self.toggle(ui, &id),
                 Some(Action::StopAll) => self.stop_all(ui),
-                Some(Action::Pick) if ui.get_picker_active() => {
-                    // Capture at confirmation, rather than using an old preview frame.
-                    match capture_current_preview() {
-                        Ok(preview) => {
-                            let mode = self.picker.mode.load(Ordering::Acquire);
-                            self.cancel_picker(ui);
-                            if mode == PickerMode::Position as u8 {
-                                ui.set_target_x(preview.x.to_string().into());
-                                ui.set_target_y(preview.y.to_string().into());
-                                ui.set_target_configured(true);
-                            } else if mode == PickerMode::Color as u8 {
-                                ui.set_color_hex(preview.color.to_hex().into());
-                                ui.set_match_color(true);
-                            }
-                            ui.set_editor_error("".into());
-                            update_preview(ui, &preview);
-                        }
-                        Err(error) => ui.set_editor_error(error.into()),
-                    }
-                }
                 _ => {}
             }
         }
+        self.poll_picker(ui);
         self.refresh(ui);
     }
 
@@ -521,9 +647,18 @@ impl Controller {
 
 fn populate_editor(ui: &AppWindow, task: &Task) {
     ui.set_task_name(task.name.clone().into());
-    ui.set_target_x(task.x.map(|v| v.to_string()).unwrap_or_default().into());
-    ui.set_target_y(task.y.map(|v| v.to_string()).unwrap_or_default().into());
-    ui.set_target_configured(task.target().is_some());
+    ui.set_target_x(
+        task.position
+            .map(|point| point.x.to_string())
+            .unwrap_or_default()
+            .into(),
+    );
+    ui.set_target_y(
+        task.position
+            .map(|point| point.y.to_string())
+            .unwrap_or_default()
+            .into(),
+    );
     ui.set_color_hex(task.color.map(RgbColor::to_hex).unwrap_or_default().into());
     ui.set_tolerance(task.color_tolerance.to_string().into());
     ui.set_minimum_interval(task.min_interval_ms.to_string().into());
@@ -541,14 +676,16 @@ fn collect_editor(ui: &AppWindow, original: &Task) -> Result<Task, String> {
     task.hotkey = ui.get_hotkey().trim().to_string();
     if !task.is_builtin() {
         task.name = ui.get_task_name().trim().to_string();
-        if ui.get_target_configured() {
-            task.x = Some(parse_field(ui.get_target_x().as_str(), "X 坐标")?);
-            task.y = Some(parse_field(ui.get_target_y().as_str(), "Y 坐标")?);
-        } else {
-            task.x = None;
-            task.y = None;
+        if ui.get_target_x().trim().is_empty() || ui.get_target_y().trim().is_empty() {
+            return Err("请先使用“位置取点”，或填写 X、Y 坐标。".into());
         }
-        task.color_tolerance = parse_field(ui.get_tolerance().as_str(), "颜色容差")?;
+        task.position = Some(Position {
+            x: parse_field(ui.get_target_x().as_str(), "X 坐标")?,
+            y: parse_field(ui.get_target_y().as_str(), "Y 坐标")?,
+        });
+        if ui.get_match_color() {
+            task.color_tolerance = parse_field(ui.get_tolerance().as_str(), "颜色容差")?;
+        }
         task.max_interval_ms = parse_field(ui.get_maximum_interval().as_str(), "最长间隔")?;
         task.max_clicks = parse_field(ui.get_maximum_clicks().as_str(), "点击次数")?;
         task.mouse_button = MouseButton::from_label(ui.get_mouse_button().as_str());
@@ -568,101 +705,4 @@ fn parse_field<T: std::str::FromStr>(value: &str, label: &str) -> Result<T, Stri
         .trim()
         .parse()
         .map_err(|_| format!("{label}格式不正确，请输入有效整数。"))
-}
-
-type PreviewFrame = (u64, Result<PixelPreview, String>);
-
-struct Picker {
-    mode: Arc<AtomicU8>,
-    generation: Arc<AtomicU64>,
-    quit: Arc<AtomicBool>,
-    latest: Arc<Mutex<Option<PreviewFrame>>>,
-    worker: Option<JoinHandle<()>>,
-}
-
-impl Picker {
-    fn new() -> Result<Self, String> {
-        let mode = Arc::new(AtomicU8::new(PickerMode::Off as u8));
-        let generation = Arc::new(AtomicU64::new(0));
-        let quit = Arc::new(AtomicBool::new(false));
-        let latest = Arc::new(Mutex::new(None));
-        let worker = thread::Builder::new()
-            .name("pointory-picker".into())
-            .spawn({
-                let mode = Arc::clone(&mode);
-                let generation = Arc::clone(&generation);
-                let quit = Arc::clone(&quit);
-                let latest = Arc::clone(&latest);
-                move || {
-                    while !quit.load(Ordering::Acquire) {
-                        let current_generation = generation.load(Ordering::Acquire);
-                        if mode.load(Ordering::Acquire) != PickerMode::Off as u8 {
-                            let preview = capture_current_preview();
-                            *latest.lock().unwrap() = Some((current_generation, preview));
-                        }
-                        thread::park_timeout(Duration::from_millis(100));
-                    }
-                }
-            })
-            .map_err(|error| format!("无法启动取样线程：{error}"))?;
-        Ok(Self {
-            mode,
-            generation,
-            quit,
-            latest,
-            worker: Some(worker),
-        })
-    }
-    fn start(&self, mode: PickerMode) {
-        self.generation.fetch_add(1, Ordering::AcqRel);
-        self.latest.lock().unwrap().take();
-        self.mode.store(mode as u8, Ordering::Release);
-        if let Some(worker) = &self.worker {
-            worker.thread().unpark();
-        }
-    }
-    fn cancel(&self) {
-        self.generation.fetch_add(1, Ordering::AcqRel);
-        self.mode.store(PickerMode::Off as u8, Ordering::Release);
-    }
-}
-
-impl Drop for Picker {
-    fn drop(&mut self) {
-        self.quit.store(true, Ordering::Release);
-        if let Some(worker) = self.worker.take() {
-            worker.thread().unpark();
-            let _ = worker.join();
-        }
-    }
-}
-
-fn capture_current_preview() -> Result<PixelPreview, String> {
-    let mut input = platform::connect_input()?;
-    let (x, y) = platform::mouse_position(&mut input)?;
-    platform::capture_preview(x, y)
-}
-
-fn update_preview(ui: &AppWindow, preview: &PixelPreview) {
-    let pixels = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(
-        &preview.rgba,
-        preview.width,
-        preview.height,
-    );
-    ui.set_magnifier_image(slint::Image::from_rgba8(pixels));
-    ui.set_preview_position(
-        format!(
-            "({}, {}) · {}",
-            preview.x,
-            preview.y,
-            preview.color.to_hex()
-        )
-        .into(),
-    );
-    ui.set_preview_color(preview.color.to_hex().into());
-    ui.set_preview_swatch(slint::Color::from_rgb_u8(
-        preview.color.red,
-        preview.color.green,
-        preview.color.blue,
-    ));
 }

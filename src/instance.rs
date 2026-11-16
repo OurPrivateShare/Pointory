@@ -5,7 +5,7 @@ use std::{
 };
 
 // Keep the returned handle alive for the entire application lifetime. A separate
-// lock file remains stable while settings.json is replaced atomically.
+// lock file remains stable while config.json is replaced atomically.
 pub fn acquire() -> Result<File, String> {
     acquire_at(&persistence::config_path().with_file_name("instance.lock"))
 }

@@ -1,4 +1,4 @@
-import { CheckBox, ScrollView, Palette } from "std-widgets.slint";
+import { Button, CheckBox, LineEdit, ScrollView, Palette } from "std-widgets.slint";
 
 export struct TaskRow {
     id: string,
@@ -16,49 +16,10 @@ export struct TaskRow {
     include-in-batch: bool,
 }
 
-component ActionButton inherits Rectangle {
+component ActionButton inherits Button {
     in property <string> label;
-    in property <bool> primary: false;
-    in property <bool> danger: false;
-    in property <bool> enabled: true;
-    callback clicked();
-    min-width: 64px;
-    height: 36px;
-    horizontal-stretch: 0;
-    vertical-stretch: 0;
-    border-radius: 7px;
-    background: !enabled ? #182124 : primary ? (touch.has-hover ? #d3fc8d : #b9ed75) : (touch.has-hover ? #29383b : #1c292d);
-    border-width: 1px;
-    border-color: focus.has-focus ? #c4f26b : primary ? transparent : #354448;
-    forward-focus: focus;
-    accessible-role: button;
-    accessible-enabled: enabled;
-    accessible-label: label;
-    accessible-action-default => { if (enabled) { root.clicked(); } }
-    Text {
-        text: label;
-        font-size: 13px;
-        font-weight: 600;
-        color: !root.enabled ? #667575 : root.primary ? #152113 : root.danger ? #f2aaa2 : #d9e5df;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        accessible-role: none;
-    }
-    touch := TouchArea {
-        enabled: root.enabled;
-        clicked => { focus.focus(); root.clicked(); }
-    }
-    focus := FocusScope {
-        width: 0;
-        enabled: root.enabled;
-        key-pressed(event) => {
-            if (event.text == Key.Return || event.text == Key.Space) {
-                root.clicked();
-                return accept;
-            }
-            return reject;
-        }
-    }
+    text: root.label;
+    preferred-height: 36px;
 }
 
 component Field inherits VerticalLayout {
@@ -67,37 +28,14 @@ component Field inherits VerticalLayout {
     in property <string> placeholder: "";
     in-out property <string> value;
     spacing: 6px;
-    Text { text: root.label; color: #acbbb7; font-size: 12px; }
-    Rectangle {
-        height: 38px;
-        background: #101a1e;
-        border-radius: 7px;
-        border-width: 1px;
-        border-color: input.has-focus ? #b9ed75 : #354448;
-        if input.text == "": Text {
-            text: root.placeholder;
-            x: 11px;
-            width: parent.width - 22px;
-            height: parent.height;
-            vertical-alignment: center;
-            font-size: 13px;
-            color: #637771;
-        }
-        input := TextInput {
-            x: 11px;
-            width: parent.width - 22px;
-            height: parent.height;
-            text <=> root.value;
-            single-line: true;
-            color: #edf4f0;
-            selection-background-color: #426c37;
-            selection-foreground-color: #ffffff;
-            font-size: 13px;
-            vertical-alignment: center;
-            accessible-label: root.label;
-        }
+    Text { text: root.label; color: Palette.foreground; font-size: 12px; }
+    LineEdit {
+        text <=> root.value;
+        placeholder-text: root.placeholder;
+        accessible-label: root.label;
+        preferred-height: 36px;
     }
-    if root.hint != "": Text { text: root.hint; font-size: 11px; color: #7c9088; wrap: word-wrap; }
+    if root.hint != "": Text { text: root.hint; font-size: 11px; color: Palette.foreground; opacity: 0.7; wrap: word-wrap; }
 }
 
 export component AppWindow inherits Window {
@@ -106,9 +44,8 @@ export component AppWindow inherits Window {
     preferred-height: 700px;
     min-width: 920px;
     min-height: 560px;
-    background: #0d1519;
+    background: Palette.background;
     default-font-size: 13px;
-    init => { Palette.color-scheme = ColorScheme.dark; }
 
     in-out property <[TaskRow]> task-rows: [];
     in-out property <string> active-count: "0";
@@ -130,11 +67,6 @@ export component AppWindow inherits Window {
     in-out property <string> mouse-button: "左键";
     in-out property <bool> match-color: false;
     in-out property <bool> include-in-batch: false;
-    in-out property <bool> target-configured: false;
-    in-out property <string> preview-position: "";
-    in-out property <string> preview-color: "";
-    in-out property <color> preview-swatch: #182327;
-    in-out property <image> magnifier-image;
     in-out property <bool> picker-active: false;
     in-out property <bool> delete-open: false;
     in-out property <string> delete-name: "";
@@ -151,7 +83,6 @@ export component AppWindow inherits Window {
     callback run-batch();
     callback stop-all();
     callback pick-position();
-    callback clear-target();
     callback pick-color();
     callback cancel-picker();
     callback cycle-button();
@@ -163,47 +94,47 @@ export component AppWindow inherits Window {
             height: 52px;
             spacing: 12px;
             Rectangle {
-                width: 42px; height: 42px; border-radius: 12px; background: #b9ed75;
-                Text { text: "P"; color: #162315; font-size: 24px; font-weight: 800; horizontal-alignment: center; vertical-alignment: center; }
+                width: 42px; height: 42px; border-radius: 12px; background: Palette.accent-background;
+                Text { text: "P"; color: Palette.accent-foreground; font-size: 24px; font-weight: 800; horizontal-alignment: center; vertical-alignment: center; }
             }
             VerticalLayout {
                 spacing: 3px;
-                Text { text: "Pointory"; font-size: 21px; font-weight: 700; color: #eef5f0; }
-                Text { text: "鼠标自动点击器"; font-size: 11px; color: #82978d; }
+                Text { text: "Pointory"; font-size: 21px; font-weight: 700; color: Palette.foreground; }
+                Text { text: "鼠标自动点击器"; font-size: 11px; color: Palette.foreground; }
             }
             Rectangle { horizontal-stretch: 1; }
             ActionButton { label: "批量运行"; width: 92px; enabled: root.list-enabled; clicked => { root.run-batch(); } }
-            ActionButton { label: "全部停止"; width: 92px; danger: true; enabled: root.list-enabled; clicked => { root.stop-all(); } }
+            ActionButton { label: "全部停止"; width: 92px; enabled: root.list-enabled; clicked => { root.stop-all(); } }
             ActionButton { label: "+  添加任务"; width: 116px; primary: true; enabled: root.list-enabled; clicked => { root.add-task(); } }
         }
         HorizontalLayout {
             height: 26px;
             spacing: 10px;
-            Text { text: "任务列表"; font-size: 17px; font-weight: 700; color: #e2ece5; vertical-alignment: center; }
-            Text { text: root.task-rows.length + " 项任务"; font-size: 11px; color: #82958c; vertical-alignment: center; }
+            Text { text: "任务列表"; font-size: 17px; font-weight: 700; color: Palette.foreground; vertical-alignment: center; }
+            Text { text: root.task-rows.length + " 项任务"; font-size: 11px; color: Palette.foreground; vertical-alignment: center; }
             Rectangle { horizontal-stretch: 1; }
             Rectangle {
-                width: 8px; height: 8px; border-radius: 4px; background: root.active-count == "0" ? #50635b : #b9ed75;
+                width: 8px; height: 8px; border-radius: 4px; background: root.active-count == "0" ? Palette.foreground : Palette.accent-background;
             }
-            Text { text: root.active-count + " 项运行中"; color: #a8bdad; font-size: 12px; vertical-alignment: center; }
+            Text { text: root.active-count + " 项运行中"; color: Palette.foreground; font-size: 12px; vertical-alignment: center; }
         }
         Rectangle {
             border-radius: 12px;
-            background: #111d21;
-            border-color: #29383c;
+            background: Palette.background;
+            border-color: Palette.border;
             border-width: 1px;
             VerticalLayout {
                 spacing: 0px;
                 Rectangle {
                     height: 42px;
-                    background: #162327;
+                    background: Palette.alternate-background;
                     HorizontalLayout {
                         padding-left: 18px; padding-right: 18px; spacing: 20px;
-                        Text { text: "任务 / 基本信息"; color: #849b8e; font-size: 11px; vertical-alignment: center; horizontal-stretch: 1; }
-                        Text { text: "点击间隔"; width: 110px; color: #849b8e; font-size: 11px; vertical-alignment: center; }
-                        Text { text: "快捷键"; width: 112px; color: #849b8e; font-size: 11px; vertical-alignment: center; }
-                        Text { text: "状态 / 点击数"; width: 124px; color: #849b8e; font-size: 11px; vertical-alignment: center; }
-                        Text { text: "操作"; width: 210px; color: #849b8e; font-size: 11px; vertical-alignment: center; }
+                        Text { text: "任务 / 基本信息"; color: Palette.foreground; font-size: 11px; vertical-alignment: center; horizontal-stretch: 1; }
+                        Text { text: "点击间隔"; width: 110px; color: Palette.foreground; font-size: 11px; vertical-alignment: center; }
+                        Text { text: "快捷键"; width: 112px; color: Palette.foreground; font-size: 11px; vertical-alignment: center; }
+                        Text { text: "状态 / 点击数"; width: 124px; color: Palette.foreground; font-size: 11px; vertical-alignment: center; }
+                        Text { text: "操作"; width: 210px; color: Palette.foreground; font-size: 11px; vertical-alignment: center; }
                     }
                 }
                 ScrollView {
@@ -213,8 +144,8 @@ export component AppWindow inherits Window {
                         alignment: start;
                         for task in root.task-rows: Rectangle {
                             height: 116px;
-                            background: task.running ? #182922 : #111d21;
-                            Rectangle { y: parent.height - 1px; height: 1px; background: #26353a; }
+                            background: task.running ? Palette.alternate-background : Palette.background;
+                            Rectangle { y: parent.height - 1px; height: 1px; background: Palette.border; }
                             HorizontalLayout {
                                 padding-left: 18px; padding-right: 18px; padding-top: 17px; padding-bottom: 17px; spacing: 20px;
                                 VerticalLayout {
@@ -222,33 +153,33 @@ export component AppWindow inherits Window {
                                     horizontal-stretch: 1;
                                     HorizontalLayout {
                                         spacing: 7px;
-                                        Text { text: task.name; color: #e6efe8; font-size: 14px; font-weight: 600; overflow: elide; horizontal-stretch: 1; }
+                                        Text { text: task.name; color: Palette.foreground; font-size: 14px; font-weight: 600; overflow: elide; horizontal-stretch: 1; }
                                         if task.builtin: Rectangle {
-                                            width: 34px; height: 19px; background: #283b2a; border-radius: 4px;
-                                            Text { text: "内置"; font-size: 10px; color: #b9d69e; horizontal-alignment: center; vertical-alignment: center; }
+                                            width: 34px; height: 19px; background: Palette.alternate-background; border-radius: 4px;
+                                            Text { text: "内置"; font-size: 10px; color: Palette.foreground; horizontal-alignment: center; vertical-alignment: center; }
                                         }
                                     }
-                                    Text { text: task.button + " · " + task.target; color: #91a69a; font-size: 11px; overflow: elide; }
-                                    Text { text: task.limit + (task.color == "" ? "" : " · " + task.color) + (task.include-in-batch ? " · 批量" : ""); color: #70877a; font-size: 10px; overflow: elide; }
+                                    Text { text: task.button + " · " + task.target; color: Palette.foreground; font-size: 11px; overflow: elide; }
+                                    Text { text: task.limit + (task.color == "" ? "" : " · " + task.color) + (task.include-in-batch ? " · 批量" : ""); color: Palette.foreground; font-size: 10px; overflow: elide; }
                                 }
                                 VerticalLayout {
                                     width: 110px; spacing: 5px; alignment: center;
-                                    Text { text: task.interval; color: #d3e0d7; font-size: 12px; wrap: word-wrap; }
+                                    Text { text: task.interval; color: Palette.foreground; font-size: 12px; wrap: word-wrap; }
                                 }
                                 VerticalLayout {
                                     width: 112px; alignment: center;
-                                    Text { text: task.hotkey == "" ? "未设置" : task.hotkey; color: task.hotkey == "" ? #617a6c : #c6d9c7; font-size: 12px; wrap: word-wrap; }
+                                    Text { text: task.hotkey == "" ? "未设置" : task.hotkey; color: Palette.foreground; font-size: 12px; wrap: word-wrap; }
                                 }
                                 VerticalLayout {
                                     width: 124px; spacing: 6px; alignment: center;
-                                    Text { text: task.state; color: task.running ? #c4f08c : #9fb4a7; font-size: 12px; wrap: word-wrap; }
-                                    Text { text: "已点击 " + task.clicks + " 次"; color: #70877a; font-size: 10px; }
+                                    Text { text: task.state; color: task.running ? Palette.accent-background : Palette.foreground; font-size: 12px; wrap: word-wrap; }
+                                    Text { text: "已点击 " + task.clicks + " 次"; color: Palette.foreground; font-size: 10px; }
                                 }
                                 HorizontalLayout {
                                     width: 210px; spacing: 7px; alignment: start;
-                                    ActionButton { label: task.running ? "停止" : "运行"; width: 66px; primary: !task.running; danger: task.running; enabled: root.list-enabled; clicked => { root.toggle-task(task.id); } }
+                                    ActionButton { label: task.running ? "停止" : "运行"; width: 66px; primary: !task.running; enabled: root.list-enabled; clicked => { root.toggle-task(task.id); } }
                                     ActionButton { label: "编辑"; width: 62px; enabled: root.list-enabled && !task.running; clicked => { root.edit-task(task.id); } }
-                                    if !task.builtin: ActionButton { label: "删除"; width: 62px; danger: true; enabled: root.list-enabled && !task.running; clicked => { root.delete-task(task.id); } }
+                                    if !task.builtin: ActionButton { label: "删除"; width: 62px; enabled: root.list-enabled && !task.running; clicked => { root.delete-task(task.id); } }
                                 }
                             }
                         }
@@ -258,24 +189,24 @@ export component AppWindow inherits Window {
         }
         VerticalLayout {
             spacing: 9px;
-            Text { text: root.status-message; color: #9fb4a6; font-size: 12px; wrap: word-wrap; }
-            if root.hotkey-warning != "": Text { text: root.hotkey-warning; color: #e3bf81; font-size: 11px; wrap: word-wrap; }
-            Text { text: "任务快捷键：开始 / 停止     ·     Ctrl + Alt + Esc：全部停止     ·     批量运行：启动已加入批量的任务"; color: #617a6a; font-size: 11px; wrap: word-wrap; }
+            Text { text: root.status-message; color: Palette.foreground; font-size: 12px; wrap: word-wrap; }
+            if root.hotkey-warning != "": Text { text: root.hotkey-warning; color: Palette.foreground; font-size: 11px; wrap: word-wrap; }
+            Text { text: "任务快捷键：开始 / 停止     ·     Ctrl + Alt + Esc：全部停止     ·     批量运行：启动已加入批量的任务"; color: Palette.foreground; font-size: 11px; wrap: word-wrap; }
         }
     }
 
     if root.editor-open: Rectangle {
-        background: #000000aa;
-        TouchArea { }
+        background: transparent;
+        Rectangle { background: Palette.foreground; opacity: 0.18; TouchArea { } }
         Rectangle {
             x: (parent.width - self.width) / 2;
             y: (parent.height - self.height) / 2;
             width: root.simple-editor ? 440px : 740px;
             height: min(parent.height - 36px, root.simple-editor ? 380px : 650px);
-            background: #162227;
+            background: Palette.alternate-background;
             border-radius: 14px;
             border-width: 1px;
-            border-color: #44574f;
+            border-color: Palette.border;
             FocusScope {
                 init => { self.focus(); }
                 capture-key-pressed(event) => {
@@ -288,33 +219,14 @@ export component AppWindow inherits Window {
                 VerticalLayout {
                     padding: 22px; spacing: 16px;
                     HorizontalLayout {
-                        height: 27px;
-                        Text { text: root.simple-editor ? "设置鼠标连点器" : root.is-new ? "添加任务" : "编辑任务"; color: #edf4ee; font-size: 18px; font-weight: 700; vertical-alignment: center; }
+                        height: 36px;
+                        Text { text: root.simple-editor ? "设置鼠标连点器" : root.is-new ? "添加任务" : "编辑任务"; color: Palette.foreground; font-size: 18px; font-weight: 700; vertical-alignment: center; }
                         Rectangle { horizontal-stretch: 1; }
-                        ActionButton { label: "关闭"; width: 64px; height: 28px; clicked => { root.cancel-editor(); } }
-                    }
-                    if root.picker-active: Rectangle {
-                        height: 112px;
-                        background: #0d191d;
-                        border-radius: 9px;
-                        HorizontalLayout {
-                            padding: 10px; spacing: 12px;
-                            Rectangle {
-                                width: 92px; height: 92px;
-                                Image { source: root.magnifier-image; image-fit: contain; }
-                                Rectangle { x: (parent.width - 8px) / 2; y: (parent.height - 8px) / 2; width: 8px; height: 8px; border-width: 1px; border-color: #f4c66b; }
-                            }
-                            VerticalLayout {
-                                spacing: 7px;
-                                Text { text: "移动鼠标，按 F8 确认取样"; color: #e9cf92; font-size: 12px; }
-                                Text { text: root.preview-position; color: #8fa99a; font-size: 11px; }
-                                ActionButton { label: "取消取样"; width: 90px; height: 29px; clicked => { root.cancel-picker(); } }
-                            }
-                        }
+                        ActionButton { label: "关闭"; width: 64px; preferred-height: 32px; clicked => { root.cancel-editor(); } }
                     }
                     if root.simple-editor: VerticalLayout {
                         spacing: 16px;
-                        Text { text: "跟随鼠标当前位置，持续点击左键。"; color: #8ea697; font-size: 12px; }
+                        Text { text: "跟随鼠标当前位置，持续点击左键。"; color: Palette.foreground; font-size: 12px; }
                         Field { label: "点击间隔（毫秒）"; value <=> root.minimum-interval; hint: "范围：20–86400000 毫秒"; }
                         Field { label: "开始 / 停止快捷键"; value <=> root.hotkey; placeholder: "F1"; }
                     }
@@ -333,30 +245,29 @@ export component AppWindow inherits Window {
                                 spacing: 14px;
                                 VerticalLayout {
                                     width: 150px; spacing: 6px;
-                                    Text { text: "鼠标按键"; color: #acbbb7; font-size: 12px; }
-                                    ActionButton { label: root.mouse-button + "  ·  切换"; height: 38px; width: 150px; clicked => { root.cycle-button(); } }
+                                    Text { text: "鼠标按键"; color: Palette.foreground; font-size: 12px; }
+                                    ActionButton { label: root.mouse-button + "  ·  切换"; preferred-height: 38px; width: 150px; clicked => { root.cycle-button(); } }
                                 }
                                 Field { label: "开始 / 停止快捷键"; value <=> root.hotkey; placeholder: "例如 CTRL+ALT+F6；可留空"; }
                             }
-                            Rectangle { height: 1px; background: #304139; }
+                            Rectangle { height: 1px; background: Palette.border; }
                             HorizontalLayout {
                                 spacing: 10px;
-                                CheckBox { text: "固定点击位置"; checked <=> root.target-configured; }
+                                Text { text: "固定点击位置"; color: Palette.foreground; font-size: 12px; vertical-alignment: center; }
                                 Rectangle { horizontal-stretch: 1; }
-                                ActionButton { label: "取点"; width: 70px; height: 30px; clicked => { root.pick-position(); } }
-                                ActionButton { label: "清除"; width: 64px; height: 30px; clicked => { root.clear-target(); } }
+                                ActionButton { label: "位置取点"; width: 90px; preferred-height: 32px; clicked => { root.pick-position(); } }
                             }
-                            if root.target-configured: HorizontalLayout {
+                            HorizontalLayout {
                                 spacing: 14px;
                                 Field { label: "X 坐标"; value <=> root.target-x; }
                                 Field { label: "Y 坐标"; value <=> root.target-y; }
                             }
-                            if !root.target-configured: Text { text: "跟随当前鼠标位置；取点时将鼠标移至目标，再按 F8 确认。"; color: #7f9888; font-size: 11px; wrap: word-wrap; }
+                            Text { text: "位置取点或吸取颜色时会最小化主窗口，移动鼠标后点击左键确认，Esc 取消。"; color: Palette.foreground; opacity: 0.7; font-size: 11px; wrap: word-wrap; }
                             HorizontalLayout {
                                 spacing: 10px;
                                 CheckBox { text: "仅颜色匹配时点击"; checked <=> root.match-color; }
                                 Rectangle { horizontal-stretch: 1; }
-                                ActionButton { label: "吸取颜色"; width: 86px; height: 30px; clicked => { root.pick-color(); } }
+                                ActionButton { label: "吸取颜色"; width: 86px; preferred-height: 32px; clicked => { root.pick-color(); } }
                             }
                             if root.match-color: HorizontalLayout {
                                 spacing: 14px;
@@ -366,7 +277,7 @@ export component AppWindow inherits Window {
                             CheckBox { text: "加入批量运行"; checked <=> root.include-in-batch; }
                         }
                     }
-                    if root.editor-error != "": Text { text: root.editor-error; color: #f2a69d; font-size: 12px; wrap: word-wrap; }
+                    if root.editor-error != "": Text { text: root.editor-error; color: Palette.foreground; font-size: 12px; wrap: word-wrap; }
                     HorizontalLayout {
                         spacing: 10px;
                         Rectangle { horizontal-stretch: 1; }
@@ -379,13 +290,13 @@ export component AppWindow inherits Window {
     }
 
     if root.delete-open: Rectangle {
-        background: #000000aa;
-        TouchArea { }
+        background: transparent;
+        Rectangle { background: Palette.foreground; opacity: 0.18; TouchArea { } }
         Rectangle {
             width: 420px; height: 210px;
             x: (parent.width - self.width) / 2;
             y: (parent.height - self.height) / 2;
-            background: #162227; border-radius: 14px; border-width: 1px; border-color: #44574f;
+            background: Palette.alternate-background; border-radius: 14px; border-width: 1px; border-color: Palette.border;
             FocusScope {
                 init => { self.focus(); }
                 capture-key-pressed(event) => {
@@ -394,13 +305,13 @@ export component AppWindow inherits Window {
                 }
                 VerticalLayout {
                     padding: 24px; spacing: 18px;
-                    Text { text: "删除任务"; color: #edf4ee; font-size: 18px; font-weight: 700; }
-                    Text { text: "确认删除“" + root.delete-name + "”？"; color: #9fb4a6; font-size: 13px; overflow: elide; }
+                    Text { text: "删除任务"; color: Palette.foreground; font-size: 18px; font-weight: 700; }
+                    Text { text: "确认删除“" + root.delete-name + "”？"; color: Palette.foreground; font-size: 13px; overflow: elide; }
                     HorizontalLayout {
                         spacing: 10px;
                         Rectangle { horizontal-stretch: 1; }
                         ActionButton { label: "取消"; width: 84px; clicked => { root.cancel-delete(); } }
-                        ActionButton { label: "确认删除"; danger: true; width: 100px; clicked => { root.confirm-delete(); } }
+                        ActionButton { label: "确认删除"; width: 100px; clicked => { root.confirm-delete(); } }
                     }
                 }
             }
@@ -414,7 +325,7 @@ export component NoticeWindow inherits Window {
     preferred-height: 220px;
     min-width: 400px;
     min-height: 220px;
-    background: #162227;
+    background: Palette.alternate-background;
     in property <string> message;
     callback dismiss();
     FocusScope {
@@ -429,12 +340,41 @@ export component NoticeWindow inherits Window {
         VerticalLayout {
             padding: 24px;
             spacing: 18px;
-            Text { text: "Pointory"; color: #edf4ee; font-size: 18px; font-weight: 700; }
-            Text { text: root.message; color: #b6c9bb; font-size: 13px; wrap: word-wrap; vertical-stretch: 1; }
+            Text { text: "Pointory"; color: Palette.foreground; font-size: 18px; font-weight: 700; }
+            Text { text: root.message; color: Palette.foreground; font-size: 13px; wrap: word-wrap; vertical-stretch: 1; }
             HorizontalLayout {
                 Rectangle { horizontal-stretch: 1; }
                 close-button := ActionButton { label: "关闭"; width: 90px; primary: true; clicked => { root.dismiss(); } }
             }
+        }
+    }
+}
+
+export component MagnifierWindow inherits Window {
+    title: "Pointory · 屏幕取样";
+    width: 208px;
+    height: 210px;
+    no-frame: true;
+    always-on-top: true;
+    background: Palette.background;
+    default-font-size: 12px;
+    in property <string> preview-position;
+    in property <image> magnifier-image;
+    in property <string> error-message: "";
+    Rectangle {
+        border-width: 1px;
+        border-color: Palette.border;
+        background: Palette.background;
+        VerticalLayout {
+            padding: 10px;
+            spacing: 6px;
+            HorizontalLayout {
+                Rectangle { horizontal-stretch: 1; }
+                Image { source: root.magnifier-image; width: 136px; height: 136px; image-fit: contain; }
+                Rectangle { horizontal-stretch: 1; }
+            }
+            Text { text: root.preview-position; color: Palette.foreground; font-size: 11px; horizontal-alignment: center; overflow: elide; }
+            Text { text: root.error-message == "" ? "左键确认 · Esc 取消" : root.error-message; color: Palette.foreground; font-size: 11px; horizontal-alignment: center; wrap: word-wrap; }
         }
     }
 }

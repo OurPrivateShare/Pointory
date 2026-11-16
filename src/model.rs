@@ -6,7 +6,7 @@ use uuid::Uuid;
 pub const MIN_INTERVAL_FLOOR_MS: u32 = 20;
 pub const MAX_INTERVAL_CEILING_MS: u32 = 86_400_000;
 pub const MAX_CLICK_LIMIT: u64 = 1_000_000;
-pub const CONFIG_SCHEMA_VERSION: u32 = 2;
+pub const CONFIG_SCHEMA_VERSION: u32 = 3;
 const CLICKER_ID: &str = "builtin-clicker";
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -70,8 +70,8 @@ impl MouseButton {
 
     pub fn from_label(value: &str) -> Self {
         match value {
-            "右键" | "Right" => Self::Right,
-            "中键" | "Middle" => Self::Middle,
+            "右键" => Self::Right,
+            "中键" => Self::Middle,
             _ => Self::Left,
         }
     }
@@ -84,14 +84,20 @@ pub enum TaskKind {
     Custom,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Position {
+    pub x: i32,
+    pub y: i32,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Task {
     pub id: String,
     pub kind: TaskKind,
     pub name: String,
-    pub x: Option<i32>,
-    pub y: Option<i32>,
+    pub position: Option<Position>,
     pub color: Option<RgbColor>,
     pub color_tolerance: u8,
     pub min_interval_ms: u32,
@@ -108,8 +114,7 @@ impl Task {
             id: Uuid::new_v4().to_string(),
             kind: TaskKind::Custom,
             name: format!("任务 {number}"),
-            x: None,
-            y: None,
+            position: None,
             color: None,
             color_tolerance: 12,
             min_interval_ms: 1_000,
@@ -142,8 +147,8 @@ impl Task {
         if self.name.trim().is_empty() {
             return Err("请为任务填写名称。".into());
         }
-        if self.x.is_some() != self.y.is_some() {
-            return Err("位置坐标不完整，请重新取点。".into());
+        if !self.is_builtin() && self.position.is_none() {
+            return Err("请设置点击位置，可使用位置取点或填写 X、Y 坐标。".into());
         }
         if self.min_interval_ms < MIN_INTERVAL_FLOOR_MS {
             return Err(format!("最短间隔不能小于 {MIN_INTERVAL_FLOOR_MS} 毫秒。"));
@@ -162,8 +167,7 @@ impl Task {
         if self.is_builtin() {
             if self.id != CLICKER_ID
                 || self.name != "鼠标连点器"
-                || self.x.is_some()
-                || self.y.is_some()
+                || self.position.is_some()
                 || self.color.is_some()
                 || self.color_tolerance != 12
                 || self.max_interval_ms != 0
@@ -180,7 +184,7 @@ impl Task {
     }
 
     pub fn target(&self) -> Option<(i32, i32)> {
-        self.x.zip(self.y)
+        self.position.map(|position| (position.x, position.y))
     }
 
     pub fn random_interval_ms<R: Rng + ?Sized>(&self, rng: &mut R) -> u32 {
@@ -249,6 +253,7 @@ mod tests {
         assert!(!task.include_in_batch);
         assert_eq!(task.max_clicks, 0);
         assert_eq!(task.kind, TaskKind::Custom);
+        assert!(task.validate().unwrap_err().contains("请设置点击位置"));
     }
 
     #[test]
@@ -279,6 +284,7 @@ mod tests {
     #[test]
     fn interval_bounds_are_validated_and_randomized_inclusively() {
         let mut task = Task::new(1);
+        task.position = Some(Position { x: 100, y: 200 });
         task.min_interval_ms = 200;
         task.max_interval_ms = 450;
         task.validate().unwrap();
@@ -356,7 +362,9 @@ mod tests {
         };
         assert!(config.validate().is_err());
         config.schema_version = CONFIG_SCHEMA_VERSION;
-        config.tasks.insert(0, Task::new(1));
+        let mut custom = Task::new(1);
+        custom.position = Some(Position { x: 10, y: 20 });
+        config.tasks.insert(0, custom);
         assert!(config.validate().is_err());
         config.tasks.swap(0, 1);
         config.validate().unwrap();
@@ -368,12 +376,12 @@ mod tests {
     }
 
     #[test]
-    fn incomplete_target_invalid_limits_and_reserved_id_are_rejected() {
+    fn custom_position_is_required_and_invalid_limits_and_reserved_id_are_rejected() {
         let mut task = Task::new(1);
-        task.x = Some(-5);
         assert!(task.validate().is_err());
-        task.y = Some(10);
+        task.position = Some(Position { x: -5, y: 10 });
         task.validate().unwrap();
+        assert_eq!(task.target(), Some((-5, 10)));
         task.min_interval_ms = MIN_INTERVAL_FLOOR_MS - 1;
         assert!(task.validate().is_err());
         task.min_interval_ms = MAX_INTERVAL_CEILING_MS + 1;
@@ -387,10 +395,26 @@ mod tests {
     }
 
     #[test]
-    fn missing_and_unknown_schema_fields_are_not_migrated() {
+    fn missing_and_unknown_configuration_fields_are_rejected() {
         assert!(serde_json::from_str::<AppConfig>(r#"{"tasks":[]}"#).is_err());
         let mut value = serde_json::to_value(AppConfig::default()).unwrap();
-        value["legacy"] = serde_json::json!(true);
+        value["unsupported"] = serde_json::json!(true);
         assert!(serde_json::from_value::<AppConfig>(value).is_err());
+    }
+
+    #[test]
+    fn saved_custom_tasks_require_complete_fixed_positions() {
+        let mut config = AppConfig::default();
+        config.tasks.push(Task::new(1));
+        assert!(config.validate().is_err());
+        config.tasks[1].position = Some(Position { x: -1920, y: 721 });
+        config.validate().unwrap();
+        let serialized = serde_json::to_value(&config).unwrap();
+        assert_eq!(serialized["tasks"][1]["position"]["x"], -1920);
+        let loaded: AppConfig = serde_json::from_value(serialized).unwrap();
+        loaded.validate().unwrap();
+        assert_eq!(loaded.tasks[1].target(), Some((-1920, 721)));
+        config.tasks[0].position = Some(Position { x: 0, y: 0 });
+        assert!(config.validate().is_err());
     }
 }

@@ -5,9 +5,9 @@
 /dist/
 
 # 本地任务配置和进程锁
-settings.json
+config.json
 instance.lock
-.settings.json.*.tmp
+.config.json.*.tmp
 
 # Rustfmt 备份文件
 **/*.rs.bk
