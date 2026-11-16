@@ -1,6 +1,6 @@
 [package]
 name = "pointory"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 build = "build.rs"
 description = "A precise, task-based desktop mouse clicker built with Rust and Slint"
@@ -19,6 +19,9 @@ uuid = { version = "1", features = ["v4"] }
 
 [build-dependencies]
 slint-build = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem", "Win32_UI_WindowsAndMessaging"] }
 
 [profile.release]
 codegen-units = 1

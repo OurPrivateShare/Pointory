@@ -4,6 +4,11 @@
 # 发布压缩包与解压目录
 /dist/
 
+# 本地任务配置和进程锁
+settings.json
+instance.lock
+.settings.json.*.tmp
+
 # Rustfmt 备份文件
 **/*.rs.bk
 

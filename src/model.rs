@@ -1,12 +1,16 @@
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use uuid::Uuid;
 
 pub const MIN_INTERVAL_FLOOR_MS: u32 = 20;
 pub const MAX_INTERVAL_CEILING_MS: u32 = 86_400_000;
 pub const MAX_CLICK_LIMIT: u64 = 1_000_000;
+pub const CONFIG_SCHEMA_VERSION: u32 = 2;
+const CLICKER_ID: &str = "builtin-clicker";
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RgbColor {
     pub red: u8,
     pub green: u8,
@@ -26,7 +30,7 @@ impl RgbColor {
 
     pub fn from_hex(value: &str) -> Option<Self> {
         let value = value.trim().strip_prefix('#').unwrap_or(value.trim());
-        if value.len() != 6 {
+        if value.len() != 6 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
             return None;
         }
 
@@ -73,10 +77,18 @@ impl MouseButton {
     }
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskKind {
+    Clicker,
+    Custom,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct Task {
     pub id: String,
+    pub kind: TaskKind,
     pub name: String,
     pub x: Option<i32>,
     pub y: Option<i32>,
@@ -94,6 +106,7 @@ impl Task {
     pub fn new(number: usize) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
+            kind: TaskKind::Custom,
             name: format!("任务 {number}"),
             x: None,
             y: None,
@@ -108,7 +121,24 @@ impl Task {
         }
     }
 
+    pub fn clicker() -> Self {
+        Self {
+            id: CLICKER_ID.into(),
+            kind: TaskKind::Clicker,
+            name: "鼠标连点器".into(),
+            hotkey: "F1".into(),
+            ..Self::new(1)
+        }
+    }
+
+    pub fn is_builtin(&self) -> bool {
+        self.kind == TaskKind::Clicker
+    }
+
     pub fn validate(&self) -> Result<(), String> {
+        if self.id.trim().is_empty() || self.id.trim() != self.id {
+            return Err("任务标识无效。".into());
+        }
         if self.name.trim().is_empty() {
             return Err("请为任务填写名称。".into());
         }
@@ -128,6 +158,23 @@ impl Task {
         }
         if self.max_clicks > MAX_CLICK_LIMIT {
             return Err(format!("点击次数不能超过 {MAX_CLICK_LIMIT}。"));
+        }
+        if self.is_builtin() {
+            if self.id != CLICKER_ID
+                || self.name != "鼠标连点器"
+                || self.x.is_some()
+                || self.y.is_some()
+                || self.color.is_some()
+                || self.color_tolerance != 12
+                || self.max_interval_ms != 0
+                || self.include_in_batch
+                || self.mouse_button != MouseButton::Left
+                || self.max_clicks != 0
+            {
+                return Err("鼠标连点器只能修改点击间隔和快捷键。".into());
+            }
+        } else if self.id == CLICKER_ID {
+            return Err("自定义任务不能使用内置任务标识。".into());
         }
         Ok(())
     }
@@ -151,10 +198,41 @@ impl Default for Task {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-#[serde(default)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct AppConfig {
+    pub schema_version: u32,
     pub tasks: Vec<Task>,
+}
+
+impl AppConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.schema_version != CONFIG_SCHEMA_VERSION {
+            return Err(format!("不支持的配置版本：{}。", self.schema_version));
+        }
+        if !self.tasks.first().is_some_and(Task::is_builtin)
+            || self.tasks.iter().filter(|task| task.is_builtin()).count() != 1
+        {
+            return Err("任务列表必须以唯一的鼠标连点器任务开始。".into());
+        }
+        let mut ids = HashSet::new();
+        for task in &self.tasks {
+            task.validate()?;
+            if !ids.insert(&task.id) {
+                return Err("存在重复的任务标识。".into());
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            schema_version: CONFIG_SCHEMA_VERSION,
+            tasks: vec![Task::clicker()],
+        }
+    }
 }
 
 #[cfg(test)]
@@ -170,6 +248,7 @@ mod tests {
         assert!(task.target().is_none());
         assert!(!task.include_in_batch);
         assert_eq!(task.max_clicks, 0);
+        assert_eq!(task.kind, TaskKind::Custom);
     }
 
     #[test]
@@ -223,5 +302,95 @@ mod tests {
         };
         assert_eq!(RgbColor::from_hex(&color.to_hex()), Some(color));
         assert_eq!(RgbColor::from_hex("nope"), None);
+        assert_eq!(RgbColor::from_hex("中123"), None);
+        assert_eq!(RgbColor::from_hex("00中1"), None);
+        assert_eq!(RgbColor::from_hex("é1234"), None);
+        assert_eq!(RgbColor::from_hex("+1+2+3"), None);
+        assert_eq!(
+            RgbColor::from_hex("#aAbBcC"),
+            Some(RgbColor {
+                red: 170,
+                green: 187,
+                blue: 204
+            })
+        );
+    }
+
+    #[test]
+    fn fresh_config_has_one_fixed_clicker() {
+        let config = AppConfig::default();
+        config.validate().unwrap();
+        assert_eq!(config.tasks.len(), 1);
+        let task = &config.tasks[0];
+        assert!(task.is_builtin());
+        assert_eq!(task.id, CLICKER_ID);
+        assert_eq!(task.name, "鼠标连点器");
+        assert_eq!(task.hotkey, "F1");
+        assert_eq!(task.min_interval_ms, 1000);
+        assert_eq!(task.mouse_button, MouseButton::Left);
+        assert!(task.target().is_none());
+        assert_eq!(task.max_clicks, 0);
+    }
+
+    #[test]
+    fn clicker_only_allows_interval_and_hotkey_changes() {
+        let mut task = Task::clicker();
+        task.min_interval_ms = 250;
+        task.hotkey = "F2".into();
+        task.validate().unwrap();
+        task.mouse_button = MouseButton::Right;
+        assert!(task.validate().is_err());
+        task.mouse_button = MouseButton::Left;
+        task.max_interval_ms = 500;
+        assert!(task.validate().is_err());
+        task.max_interval_ms = 0;
+        task.name = "改名".into();
+        assert!(task.validate().is_err());
+    }
+
+    #[test]
+    fn invalid_schema_order_and_duplicate_ids_are_rejected() {
+        let mut config = AppConfig {
+            schema_version: 1,
+            ..AppConfig::default()
+        };
+        assert!(config.validate().is_err());
+        config.schema_version = CONFIG_SCHEMA_VERSION;
+        config.tasks.insert(0, Task::new(1));
+        assert!(config.validate().is_err());
+        config.tasks.swap(0, 1);
+        config.validate().unwrap();
+        config.tasks.push(config.tasks[1].clone());
+        assert!(config.validate().is_err());
+        config.tasks.pop();
+        config.tasks.push(Task::clicker());
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn incomplete_target_invalid_limits_and_reserved_id_are_rejected() {
+        let mut task = Task::new(1);
+        task.x = Some(-5);
+        assert!(task.validate().is_err());
+        task.y = Some(10);
+        task.validate().unwrap();
+        task.min_interval_ms = MIN_INTERVAL_FLOOR_MS - 1;
+        assert!(task.validate().is_err());
+        task.min_interval_ms = MAX_INTERVAL_CEILING_MS + 1;
+        assert!(task.validate().is_err());
+        task.min_interval_ms = 1000;
+        task.max_clicks = MAX_CLICK_LIMIT + 1;
+        assert!(task.validate().is_err());
+        task.max_clicks = 0;
+        task.id = CLICKER_ID.into();
+        assert!(task.validate().is_err());
+    }
+
+    #[test]
+    fn missing_and_unknown_schema_fields_are_not_migrated() {
+        assert!(serde_json::from_str::<AppConfig>(r#"{"tasks":[]}"#).is_err());
+        let mut value = serde_json::to_value(AppConfig::default()).unwrap();
+        value["legacy"] = serde_json::json!(true);
+        assert!(serde_json::from_value::<AppConfig>(value).is_err());
     }
 }
