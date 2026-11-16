@@ -1,0 +1,20 @@
+# Rust 构建产物（桌面应用保留 Cargo.lock，以固定依赖版本）
+/target/
+
+# 发布压缩包与解压目录
+/dist/
+
+# Rustfmt 备份文件
+**/*.rs.bk
+
+# 编辑器本地配置与临时文件
+/.idea/
+/.vscode/
+*.swp
+*.swo
+*~
+
+# 操作系统生成的文件
+.DS_Store
+Thumbs.db
+Desktop.ini
