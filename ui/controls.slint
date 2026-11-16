@@ -1,0 +1,75 @@
+import { Button, LineEdit, Palette } from "std-widgets.slint";
+
+export global UiColors {
+    out property <color> muted: Palette.foreground.with-alpha(0.64);
+    out property <color> subtle: Palette.foreground.with-alpha(0.48);
+    out property <color> border: Palette.foreground.with-alpha(0.14);
+    out property <color> success: Palette.color-scheme == ColorScheme.dark ? #73dba1 : #17834d;
+    out property <color> success-background: Palette.color-scheme == ColorScheme.dark ? #153b2b : #e5f3eb;
+    out property <color> danger: Palette.color-scheme == ColorScheme.dark ? #ffaaa4 : #b23431;
+    out property <color> danger-background: Palette.color-scheme == ColorScheme.dark ? #f0665b24 : #d9393010;
+    out property <color> accent-soft: Palette.accent-background.with-alpha(0.14);
+}
+
+export component UiButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary: false;
+    in property <bool> danger: false;
+    in property <bool> enabled: true;
+    in property <image> icon;
+    in property <length> icon-size: 15px;
+    out property <bool> has-focus: native.has-focus;
+    callback clicked();
+    preferred-height: 36px;
+    min-height: native.min-height;
+    min-width: native.min-width;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    forward-focus: native;
+    native := Button {
+        width: parent.width;
+        height: min(parent.height, root.preferred-height);
+        y: (parent.height - self.height) / 2;
+        text: root.label;
+        icon: root.icon;
+        icon-size: root.icon-size;
+        colorize-icon: true;
+        primary: root.primary;
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+    if root.danger: Rectangle {
+        x: native.x;
+        y: native.y;
+        width: native.width;
+        height: native.height;
+        border-radius: 4px;
+        border-width: 1px;
+        border-color: UiColors.danger.with-alpha(root.enabled ? 0.24 : 0.1);
+        background: UiColors.danger-background;
+        accessible-role: none;
+    }
+}
+
+export component Field inherits VerticalLayout {
+    in property <string> label;
+    in property <string> hint: "";
+    in property <string> placeholder: "";
+    in property <bool> enabled: true;
+    in-out property <string> value;
+    spacing: 7px;
+    Text { text: root.label; color: Palette.foreground; font-size: 12px; }
+    LineEdit {
+        text <=> root.value;
+        enabled: root.enabled;
+        placeholder-text: root.placeholder;
+        accessible-label: root.label;
+        preferred-height: 38px;
+    }
+    if root.hint != "": Text {
+        text: root.hint;
+        font-size: 11px;
+        color: UiColors.muted;
+        wrap: word-wrap;
+    }
+}

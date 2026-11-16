@@ -1,0 +1,305 @@
+import { CheckBox, ComboBox, LineEdit, Palette, ScrollView } from "std-widgets.slint";
+import { UiButton, Field, UiColors } from "controls.slint";
+
+component Card inherits Rectangle {
+    background: Palette.alternate-background;
+    border-color: UiColors.border;
+    border-width: 1px;
+    border-radius: 10px;
+    VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+        @children
+    }
+}
+
+component SectionLabel inherits Text {
+    color: Palette.foreground;
+    font-size: 13px;
+    font-weight: 600;
+    vertical-alignment: center;
+}
+
+component Hint inherits Text {
+    color: Palette.foreground;
+    opacity: 0.62;
+    font-size: 11px;
+    wrap: word-wrap;
+}
+
+export component TaskEditor inherits Rectangle {
+    in property <bool> simple-editor: false;
+    in property <bool> is-new: false;
+    in property <bool> picker-active: false;
+    in property <string> editor-error: "";
+    in-out property <string> task-name: "";
+    in-out property <string> target-x: "";
+    in-out property <string> target-y: "";
+    in-out property <string> color-hex: "";
+    in-out property <string> tolerance: "12";
+    in-out property <string> minimum-interval: "1000";
+    in-out property <string> maximum-interval: "1200";
+    in-out property <string> hotkey: "";
+    in-out property <string> maximum-clicks: "100";
+    in-out property <string> mouse-button: "左键";
+    in-out property <bool> match-color: false;
+    in-out property <bool> include-in-batch: false;
+    in-out property <bool> random-interval: false;
+    in-out property <bool> limit-clicks: false;
+
+    callback save();
+    callback cancel();
+    callback pick-position();
+    callback pick-color();
+    callback cancel-picker();
+
+    background: Palette.background;
+    border-radius: 14px;
+    border-width: 1px;
+    border-color: UiColors.border;
+
+    FocusScope {
+        init => { self.focus(); }
+        capture-key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                if (root.picker-active) { root.cancel-picker(); } else { root.cancel(); }
+                return accept;
+            }
+            if (event.modifiers.control && event.text == Key.Return && !root.picker-active) {
+                root.save();
+                return accept;
+            }
+            return reject;
+        }
+        VerticalLayout {
+            padding: 22px;
+            spacing: 16px;
+            HorizontalLayout {
+                height: 40px;
+                spacing: 12px;
+                VerticalLayout {
+                    spacing: 3px;
+                    Text {
+                        text: root.simple-editor ? "鼠标连点器设置" : root.is-new ? "添加任务" : "编辑任务";
+                        font-size: 20px;
+                        font-weight: 700;
+                        color: Palette.foreground;
+                    }
+                    Hint { text: root.simple-editor ? "跟随鼠标位置，持续点击左键" : "设置固定位置、点击节奏与触发条件"; }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                UiButton { label: "关闭"; width: 64px; preferred-height: 32px; clicked => { root.cancel(); } }
+            }
+
+            ScrollView {
+                content-width: self.visible-width;
+                vertical-stretch: 1;
+                VerticalLayout {
+                    padding-right: 5px;
+                    spacing: 14px;
+                    alignment: start;
+
+                    if root.simple-editor: VerticalLayout {
+                        spacing: 18px;
+                        Field {
+                            label: "点击间隔（毫秒）";
+                            value <=> root.minimum-interval;
+                            hint: "每两次点击之间的等待时间，范围 20–86400000 毫秒";
+                            enabled: !root.picker-active;
+                        }
+                        Field {
+                            label: "开始 / 停止快捷键";
+                            value <=> root.hotkey;
+                            placeholder: "F1";
+                            hint: "再次按下同一快捷键即可停止；留空则仅使用运行按钮";
+                            enabled: !root.picker-active;
+                        }
+                    }
+
+                    if !root.simple-editor: VerticalLayout {
+                        spacing: 14px;
+
+                        Card {
+                            SectionLabel { text: "基本信息"; }
+                            HorizontalLayout {
+                                spacing: 14px;
+                                Field {
+                                    label: "任务名称";
+                                    value <=> root.task-name;
+                                    placeholder: "例如：领取奖励";
+                                    enabled: !root.picker-active;
+                                    horizontal-stretch: 1;
+                                }
+                                VerticalLayout {
+                                    width: 156px;
+                                    spacing: 6px;
+                                    Text { text: "鼠标按键"; font-size: 12px; color: Palette.foreground; }
+                                    ComboBox {
+                                        model: ["左键", "右键", "中键"];
+                                        current-value <=> root.mouse-button;
+                                        enabled: !root.picker-active;
+                                        preferred-height: 38px;
+                                    }
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: 18px;
+                                Field {
+                                    label: "开始 / 停止快捷键";
+                                    value <=> root.hotkey;
+                                    placeholder: "例如 F2 或 Ctrl+Alt+F6；可留空";
+                                    enabled: !root.picker-active;
+                                    horizontal-stretch: 1;
+                                }
+                                VerticalLayout {
+                                    width: 184px;
+                                    alignment: center;
+                                    CheckBox {
+                                        text: "加入批量运行";
+                                        checked <=> root.include-in-batch;
+                                        enabled: !root.picker-active;
+                                    }
+                                }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 14px;
+
+                            Card {
+                                horizontal-stretch: 1;
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    SectionLabel { text: "执行节奏"; }
+                                    Rectangle { horizontal-stretch: 1; }
+                                    CheckBox {
+                                        text: "随机间隔";
+                                        checked <=> root.random-interval;
+                                        enabled: !root.picker-active;
+                                    }
+                                }
+                                HorizontalLayout {
+                                    spacing: 12px;
+                                    Field {
+                                        label: root.random-interval ? "最短间隔（毫秒）" : "点击间隔（毫秒）";
+                                        value <=> root.minimum-interval;
+                                        enabled: !root.picker-active;
+                                    }
+                                    if root.random-interval: Field {
+                                        label: "最长间隔（毫秒）";
+                                        value <=> root.maximum-interval;
+                                        enabled: !root.picker-active;
+                                    }
+                                }
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    CheckBox {
+                                        text: "限制点击次数";
+                                        checked <=> root.limit-clicks;
+                                        enabled: !root.picker-active;
+                                    }
+                                    if root.limit-clicks: LineEdit {
+                                        width: 94px;
+                                        text <=> root.maximum-clicks;
+                                        accessible-label: "点击次数";
+                                        enabled: !root.picker-active;
+                                        preferred-height: 34px;
+                                    }
+                                    if root.limit-clicks: Text { text: "次"; color: Palette.foreground; font-size: 12px; vertical-alignment: center; }
+                                    if !root.limit-clicks: Hint { text: "持续点击"; vertical-alignment: center; }
+                                    Rectangle { horizontal-stretch: 1; }
+                                }
+                            }
+
+                            Card {
+                                horizontal-stretch: 1;
+                                HorizontalLayout {
+                                    SectionLabel { text: "点击位置"; }
+                                    Rectangle { horizontal-stretch: 1; }
+                                    UiButton {
+                                        label: "位置取点";
+                                        icon: @image-url("../assets/position.svg");
+                                        width: 110px;
+                                        preferred-height: 32px;
+                                        enabled: !root.picker-active;
+                                        clicked => { root.pick-position(); }
+                                    }
+                                }
+                                HorizontalLayout {
+                                    spacing: 12px;
+                                    Field { label: "X 坐标"; value <=> root.target-x; placeholder: "必填"; enabled: !root.picker-active; }
+                                    Field { label: "Y 坐标"; value <=> root.target-y; placeholder: "必填"; enabled: !root.picker-active; }
+                                }
+                                Hint { text: "取点时窗口自动收起，左键确认位置，Esc 取消。"; }
+                            }
+                        }
+
+                        Card {
+                            HorizontalLayout {
+                                spacing: 12px;
+                                CheckBox {
+                                    text: "仅颜色匹配时点击";
+                                    checked <=> root.match-color;
+                                    enabled: !root.picker-active;
+                                }
+                                Rectangle { horizontal-stretch: 1; }
+                                UiButton {
+                                    label: "吸取颜色";
+                                    icon: @image-url("../assets/eyedropper.svg");
+                                    width: 112px;
+                                    preferred-height: 32px;
+                                    enabled: !root.picker-active;
+                                    clicked => { root.pick-color(); }
+                                }
+                            }
+                            if root.match-color: HorizontalLayout {
+                                spacing: 14px;
+                                Field {
+                                    label: "目标颜色";
+                                    value <=> root.color-hex;
+                                    placeholder: "#RRGGBB";
+                                    enabled: !root.picker-active;
+                                    horizontal-stretch: 1;
+                                }
+                                Field {
+                                    label: "颜色容差（0–255）";
+                                    value <=> root.tolerance;
+                                    enabled: !root.picker-active;
+                                    horizontal-stretch: 1;
+                                }
+                            }
+                            if !root.match-color: Hint { text: "不检测颜色，按设定间隔直接点击。"; }
+                        }
+                    }
+                }
+            }
+
+            if root.editor-error != "": Rectangle {
+                background: UiColors.danger-background;
+                border-color: UiColors.danger.with-alpha(0.35);
+                border-width: 1px;
+                border-radius: 7px;
+                HorizontalLayout {
+                    padding: 10px;
+                    spacing: 8px;
+                    Text { text: "!"; color: UiColors.danger; font-size: 14px; font-weight: 700; vertical-alignment: center; }
+                    Text { text: root.editor-error; color: UiColors.danger; font-size: 12px; wrap: word-wrap; horizontal-stretch: 1; }
+                }
+            }
+            HorizontalLayout {
+                height: 40px;
+                spacing: 10px;
+                Hint { text: "Ctrl + Enter 保存"; vertical-alignment: center; }
+                Rectangle { horizontal-stretch: 1; }
+                UiButton { label: "取消"; width: 88px; clicked => { root.cancel(); } }
+                UiButton {
+                    label: root.is-new ? "添加任务" : "保存设置";
+                    primary: true;
+                    width: 110px;
+                    enabled: !root.picker-active;
+                    clicked => { root.save(); }
+                }
+            }
+        }
+    }
+}

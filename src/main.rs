@@ -9,6 +9,8 @@ mod persistence;
 mod picker;
 mod platform;
 mod preview;
+#[cfg(test)]
+mod ui_preview;
 
 slint::include_modules!();
 
@@ -56,6 +58,8 @@ struct Controller {
     next_pick_token: Cell<u64>,
     preview: PreviewService,
     magnifier: MagnifierWindow,
+    save_status: RefCell<String>,
+    last_list_refresh: Cell<Instant>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -81,6 +85,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(config) => (config, None),
         Err(error) => (AppConfig::default(), Some(error)),
     };
+    let save_status = if load_error.is_some() {
+        "读取异常"
+    } else if persistence::config_path().is_file() {
+        "已保存"
+    } else {
+        "默认设置"
+    };
     let hotkeys = Hotkeys::new(&config);
     let warning = [load_error.unwrap_or_default(), hotkeys.warning.clone()]
         .into_iter()
@@ -97,6 +108,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         next_pick_token: Cell::new(0),
         preview: PreviewService::new()?,
         magnifier: magnifier::new_window()?,
+        save_status: RefCell::new(save_status.into()),
+        last_list_refresh: Cell::new(Instant::now()),
     });
     let ui = AppWindow::new()?;
     if !warning.is_empty() {
@@ -139,20 +152,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     bind!(on_pick_position, pick_position);
     bind!(on_pick_color, pick_color);
     bind!(on_cancel_picker, cancel_picker);
-    ui.on_cycle_button({
-        let weak = ui.as_weak();
-        move || {
-            if let Some(ui) = weak.upgrade() {
-                ui.set_mouse_button(
-                    MouseButton::from_label(ui.get_mouse_button().as_str())
-                        .cycle()
-                        .label()
-                        .into(),
-                );
-            }
-        }
-    });
-
     ui.window().on_close_requested({
         let controller = Rc::clone(&controller);
         move || {
@@ -181,7 +180,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 impl Controller {
     fn add(&self, ui: &AppWindow) {
-        let number = self.config.borrow().tasks.len();
+        let mut number = 1;
+        while self
+            .config
+            .borrow()
+            .tasks
+            .iter()
+            .any(|task| task.name == format!("任务 {number}"))
+        {
+            number += 1;
+        }
         self.open_editor(
             ui,
             Draft {
@@ -254,6 +262,17 @@ impl Controller {
         })();
         match result {
             Ok(()) => {
+                if let Some(draft) = self.draft.borrow().as_ref()
+                    && let Some(saved) = self
+                        .config
+                        .borrow()
+                        .tasks
+                        .iter()
+                        .find(|task| task.id == draft.task.id)
+                    && !task_matches(saved, ui.get_search_query().as_str())
+                {
+                    ui.set_search_query("".into());
+                }
                 self.cancel_editor(ui);
                 let warning = self.hotkeys.borrow().warning.clone();
                 ui.set_status_message(if warning.is_empty() {
@@ -284,6 +303,7 @@ impl Controller {
             });
         }
         *self.config.borrow_mut() = next;
+        *self.save_status.borrow_mut() = "已保存".into();
         Ok(())
     }
 
@@ -577,17 +597,23 @@ impl Controller {
             }
         }
         self.poll_picker(ui);
-        self.refresh(ui);
+        if self.last_list_refresh.get().elapsed() >= Duration::from_millis(150) {
+            self.refresh(ui);
+        }
     }
 
     fn refresh(&self, ui: &AppWindow) {
+        self.last_list_refresh.set(Instant::now());
+        ui.set_save_status(self.save_status.borrow().clone().into());
         ui.set_hotkey_warning(self.hotkeys.borrow().warning.clone().into());
         ui.set_active_count(self.engine.active_count().to_string().into());
-        let rows = self
-            .config
-            .borrow()
+        let config = self.config.borrow();
+        ui.set_total_count(config.tasks.len().to_string().into());
+        let query = ui.get_search_query();
+        let rows = config
             .tasks
             .iter()
+            .filter(|task| task_matches(task, query.as_str()))
             .map(|task| {
                 let runtime = self.engine.runtime(&task.id);
                 TaskRow {
@@ -598,11 +624,7 @@ impl Controller {
                     } else {
                         runtime.message.into()
                     },
-                    hotkey: if task.hotkey.is_empty() {
-                        "未设置".into()
-                    } else {
-                        task.hotkey.clone().into()
-                    },
+                    hotkey: task.hotkey.clone().into(),
                     target: task
                         .target()
                         .map(|(x, y)| format!("({x}, {y})"))
@@ -620,11 +642,13 @@ impl Controller {
                     } else {
                         format!("{} 次", task.max_clicks).into()
                     },
-                    color: task
+                    color: task.color.map(RgbColor::to_hex).unwrap_or_default().into(),
+                    has_color: task.color.is_some(),
+                    color_tolerance: task.color_tolerance.to_string().into(),
+                    swatch: task
                         .color
-                        .map(|color| format!("颜色 {} ±{}", color.to_hex(), task.color_tolerance))
-                        .unwrap_or_default()
-                        .into(),
+                        .map(|color| slint::Color::from_rgb_u8(color.red, color.green, color.blue))
+                        .unwrap_or_default(),
                     clicks: runtime.clicks.to_string().into(),
                     running: runtime.running,
                     builtin: task.is_builtin(),
@@ -662,9 +686,29 @@ fn populate_editor(ui: &AppWindow, task: &Task) {
     ui.set_color_hex(task.color.map(RgbColor::to_hex).unwrap_or_default().into());
     ui.set_tolerance(task.color_tolerance.to_string().into());
     ui.set_minimum_interval(task.min_interval_ms.to_string().into());
-    ui.set_maximum_interval(task.max_interval_ms.to_string().into());
+    ui.set_random_interval(task.max_interval_ms > 0);
+    ui.set_maximum_interval(
+        if task.max_interval_ms == 0 {
+            task.min_interval_ms
+                .saturating_add(200)
+                .min(model::MAX_INTERVAL_CEILING_MS)
+        } else {
+            task.max_interval_ms
+        }
+        .to_string()
+        .into(),
+    );
     ui.set_hotkey(task.hotkey.clone().into());
-    ui.set_maximum_clicks(task.max_clicks.to_string().into());
+    ui.set_limit_clicks(task.max_clicks > 0);
+    ui.set_maximum_clicks(
+        if task.max_clicks == 0 {
+            100
+        } else {
+            task.max_clicks
+        }
+        .to_string()
+        .into(),
+    );
     ui.set_mouse_button(task.mouse_button.label().into());
     ui.set_match_color(task.color.is_some());
     ui.set_include_in_batch(task.include_in_batch);
@@ -686,8 +730,12 @@ fn collect_editor(ui: &AppWindow, original: &Task) -> Result<Task, String> {
         if ui.get_match_color() {
             task.color_tolerance = parse_field(ui.get_tolerance().as_str(), "颜色容差")?;
         }
-        task.max_interval_ms = parse_field(ui.get_maximum_interval().as_str(), "最长间隔")?;
-        task.max_clicks = parse_field(ui.get_maximum_clicks().as_str(), "点击次数")?;
+        task.max_interval_ms = interval_maximum(
+            ui.get_maximum_interval().as_str(),
+            task.min_interval_ms,
+            ui.get_random_interval(),
+        )?;
+        task.max_clicks = click_limit(ui.get_maximum_clicks().as_str(), ui.get_limit_clicks())?;
         task.mouse_button = MouseButton::from_label(ui.get_mouse_button().as_str());
         task.include_in_batch = ui.get_include_in_batch();
         task.color = if ui.get_match_color() {
@@ -705,4 +753,83 @@ fn parse_field<T: std::str::FromStr>(value: &str, label: &str) -> Result<T, Stri
         .trim()
         .parse()
         .map_err(|_| format!("{label}格式不正确，请输入有效整数。"))
+}
+
+fn interval_maximum(value: &str, minimum: u32, random: bool) -> Result<u32, String> {
+    if !random {
+        return Ok(0);
+    }
+    let maximum = parse_field(value, "最长间隔")?;
+    if maximum < minimum {
+        return Err("最长间隔不能小于最短间隔。".into());
+    }
+    Ok(maximum)
+}
+
+fn click_limit(value: &str, limited: bool) -> Result<u64, String> {
+    if !limited {
+        return Ok(0);
+    }
+    let count = parse_field(value, "点击次数")?;
+    if count == 0 {
+        return Err("限定点击次数必须大于 0；如需持续点击，请关闭次数限制。".into());
+    }
+    Ok(count)
+}
+
+fn task_matches(task: &Task, query: &str) -> bool {
+    let query = query.trim();
+    if query.is_empty() {
+        return true;
+    }
+    let target = task
+        .target()
+        .map(|(x, y)| format!("{x}, {y} {x},{y}"))
+        .unwrap_or_else(|| "内置 跟随鼠标".into());
+    let color = task.color.map(RgbColor::to_hex).unwrap_or_default();
+    let text = format!(
+        "{} {} {} {} {} {}",
+        task.name,
+        task.hotkey,
+        target,
+        color,
+        task.mouse_button.label(),
+        if task.include_in_batch { "批量" } else { "" }
+    )
+    .to_lowercase();
+    query
+        .to_lowercase()
+        .split_whitespace()
+        .all(|word| text.contains(word))
+}
+
+#[cfg(test)]
+mod ui_behavior_tests {
+    use super::*;
+
+    #[test]
+    fn search_matches_names_coordinates_hotkeys_and_color_case_insensitively() {
+        let mut task = Task::new(1);
+        task.name = "任务 Alpha".into();
+        task.hotkey = "CTRL+F2".into();
+        task.position = Some(Position { x: -1280, y: 585 });
+        task.color = RgbColor::from_hex("#AABBCC");
+        assert!(task_matches(&task, " alpha "));
+        assert!(task_matches(&task, "-1280, 585"));
+        assert!(task_matches(&task, "ctrl+f2 #aabbcc"));
+        assert!(!task_matches(&task, "任务 beta"));
+        assert!(task_matches(&Task::clicker(), "内置 F1"));
+        assert!(task_matches(&task, "  "));
+    }
+
+    #[test]
+    fn disabled_options_ignore_hidden_input_and_enabled_options_validate_it() {
+        assert_eq!(interval_maximum("not a number", 1000, false).unwrap(), 0);
+        assert_eq!(click_limit("not a number", false).unwrap(), 0);
+        assert!(interval_maximum("900", 1000, true).is_err());
+        assert!(interval_maximum("0", 1000, true).is_err());
+        assert_eq!(interval_maximum("1200", 1000, true).unwrap(), 1200);
+        assert!(click_limit("0", true).is_err());
+        assert_eq!(click_limit("15", true).unwrap(), 15);
+    }
 }

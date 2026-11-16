@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="tile" x1="40" y1="16" x2="206" y2="242" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#45C6FF"/>
+      <stop offset=".43" stop-color="#168EE7"/>
+      <stop offset="1" stop-color="#0750BC"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="65" cy="37" r="210" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#BEF4FF" stop-opacity=".35"/>
+      <stop offset="1" stop-color="#77DEFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="edge" x1="51" y1="16" x2="208" y2="237" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B5EFFF" stop-opacity=".8"/>
+      <stop offset=".5" stop-color="#1C98EC" stop-opacity=".3"/>
+      <stop offset="1" stop-color="#063D98" stop-opacity=".8"/>
+    </linearGradient>
+    <linearGradient id="pointer" x1="112" y1="98" x2="174" y2="198" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#D4F1FF"/>
+    </linearGradient>
+  </defs>
+  <rect x="17" y="23" width="222" height="224" rx="51" fill="#04509D" opacity=".09"/>
+  <rect x="17" y="21" width="222" height="223" rx="51" fill="#04509D" opacity=".13"/>
+  <rect x="16" y="16" width="224" height="224" rx="51" fill="url(#tile)"/>
+  <rect x="16" y="16" width="224" height="224" rx="51" fill="url(#glow)"/>
+  <rect x="17" y="17" width="222" height="222" rx="50" fill="none" stroke="url(#edge)" stroke-width="2"/>
+  <path d="M39 105V70c0-17 14-31 31-31h49" fill="none" stroke="#CBF5FF" stroke-opacity=".24" stroke-width="3" stroke-linecap="round"/>
+  <g fill="none" stroke="#C3F2FF" stroke-linecap="round">
+    <path d="M58 135a62 62 0 1 1 104-64" stroke-width="7" opacity=".48"/>
+    <path d="M75 124a42 42 0 1 1 71-48" stroke-width="7" opacity=".7"/>
+    <path d="M92 114a22 22 0 1 1 37-26" stroke-width="7" opacity=".95"/>
+  </g>
+  <path d="m113 101 76 58-39 6 22 37-20 12-22-38-25 30z" fill="#064796" opacity=".36"/>
+  <path d="m108 94 77 58-40 6 22 37-19 11-23-38-25 30z" fill="url(#pointer)" stroke="#F6FDFF" stroke-width="3" stroke-linejoin="round"/>
+  <path d="m109 98 71 53-39 6 23 38" fill="none" stroke="#FFFFFF" stroke-opacity=".72" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

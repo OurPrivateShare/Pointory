@@ -60,14 +60,6 @@ impl MouseButton {
         }
     }
 
-    pub fn cycle(self) -> Self {
-        match self {
-            Self::Left => Self::Right,
-            Self::Right => Self::Middle,
-            Self::Middle => Self::Left,
-        }
-    }
-
     pub fn from_label(value: &str) -> Self {
         match value {
             "右键" => Self::Right,

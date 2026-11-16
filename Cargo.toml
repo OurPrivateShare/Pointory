@@ -1,6 +1,6 @@
 [package]
 name = "pointory"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 build = "build.rs"
 description = "A precise, task-based desktop mouse clicker built with Rust and Slint"
