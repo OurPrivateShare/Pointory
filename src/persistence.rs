@@ -6,19 +6,24 @@ use std::{
 };
 use uuid::Uuid;
 
-pub fn config_path() -> PathBuf {
-    if let Some(directory) = std::env::var_os("POINTORY_CONFIG_DIR").filter(|path| !path.is_empty())
-    {
-        return PathBuf::from(directory).join("config.json");
+pub fn config_path() -> Result<PathBuf, String> {
+    let executable =
+        std::env::current_exe().map_err(|error| format!("无法确定程序所在目录：{error}"))?;
+    config_path_for(&executable)
+}
+
+fn config_path_for(executable: &Path) -> Result<PathBuf, String> {
+    if !executable.is_absolute() || executable.file_name().is_none() {
+        return Err("程序路径无效，无法确定配置文件位置。".into());
     }
-    let base = dirs::config_dir()
-        .or_else(dirs::data_local_dir)
-        .unwrap_or_else(std::env::temp_dir);
-    base.join("Pointory").join("config.json")
+    let directory = executable
+        .parent()
+        .ok_or_else(|| "无法确定程序所在目录。".to_string())?;
+    Ok(directory.join("config.json"))
 }
 
 pub fn load() -> Result<AppConfig, String> {
-    load_from(&config_path())
+    load_from(&config_path()?)
 }
 
 pub fn load_from(path: &Path) -> Result<AppConfig, String> {
@@ -36,7 +41,7 @@ pub fn load_from(path: &Path) -> Result<AppConfig, String> {
 }
 
 pub fn save(config: &AppConfig) -> Result<(), String> {
-    save_to(&config_path(), config)
+    save_to(&config_path()?, config)
 }
 
 pub fn save_to(path: &Path, config: &AppConfig) -> Result<(), String> {
@@ -128,6 +133,59 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn configuration_is_beside_the_running_executable() {
+        let executable = std::env::current_exe().unwrap();
+        assert_eq!(
+            config_path().unwrap(),
+            executable.parent().unwrap().join("config.json")
+        );
+    }
+
+    #[test]
+    fn portable_path_preserves_spaces_and_unicode_directory_names() {
+        let directory = TestDirectory::new();
+        let application = directory.0.join("便携软件 测试");
+        let executable = application.join("Pointory.exe");
+        assert_eq!(
+            config_path_for(&executable).unwrap(),
+            application.join("config.json")
+        );
+        assert!(config_path_for(Path::new("Pointory.exe")).is_err());
+        assert!(config_path_for(Path::new("subfolder/Pointory.exe")).is_err());
+        assert!(config_path_for(Path::new("")).is_err());
+    }
+
+    #[test]
+    fn moving_the_portable_directory_keeps_its_saved_tasks() {
+        let directory = TestDirectory::new();
+        let source = directory.0.join("原软件目录");
+        let destination = directory.0.join("移动后的 软件目录");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("Pointory.exe"), b"test executable").unwrap();
+        let mut config = AppConfig::default();
+        config.tasks[0].min_interval_ms = 375;
+        config.tasks[0].hotkey = "F4".into();
+        let mut task = Task::new(1);
+        task.position = Some(Position { x: -400, y: 600 });
+        let task_id = task.id.clone();
+        config.tasks.push(task);
+        save_to(
+            &config_path_for(&source.join("Pointory.exe")).unwrap(),
+            &config,
+        )
+        .unwrap();
+
+        fs::rename(&source, &destination).unwrap();
+        let moved =
+            load_from(&config_path_for(&destination.join("Pointory.exe")).unwrap()).unwrap();
+        assert_eq!(moved.tasks[0].min_interval_ms, 375);
+        assert_eq!(moved.tasks[0].hotkey, "F4");
+        assert_eq!(moved.tasks[1].id, task_id);
+        assert_eq!(moved.tasks[1].target(), Some((-400, 600)));
+        assert!(!source.exists());
     }
 
     #[test]

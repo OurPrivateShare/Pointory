@@ -1,13 +1,12 @@
 [package]
 name = "pointory"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
 build = "build.rs"
 description = "A precise, task-based desktop mouse clicker built with Rust and Slint"
 license = "MIT"
 
 [dependencies]
-dirs = "6"
 enigo = "0.3"
 global-hotkey = "0.7"
 rand = "0.8"
@@ -21,7 +20,7 @@ uuid = { version = "1", features = ["v4"] }
 slint-build = "1"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_LibraryLoader"] }
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_LibraryLoader", "Win32_System_Threading", "Win32_Security"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11rb = "0.13"

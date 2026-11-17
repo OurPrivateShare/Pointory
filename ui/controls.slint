@@ -1,8 +1,11 @@
 import { Button, LineEdit, Palette } from "std-widgets.slint";
 
 export global UiColors {
-    out property <color> muted: Palette.foreground.with-alpha(0.64);
-    out property <color> subtle: Palette.foreground.with-alpha(0.48);
+    // A control brush may be translucent (Fluent controls use alpha). Dialogs
+    // need a fully opaque surface so task text never bleeds through them.
+    out property <color> surface: Palette.background.with-alpha(1.0);
+    out property <color> muted: Palette.foreground.with-alpha(0.82);
+    out property <color> subtle: Palette.foreground.with-alpha(0.68);
     out property <color> border: Palette.foreground.with-alpha(0.14);
     out property <color> success: Palette.color-scheme == ColorScheme.dark ? #73dba1 : #17834d;
     out property <color> success-background: Palette.color-scheme == ColorScheme.dark ? #153b2b : #e5f3eb;
@@ -58,7 +61,7 @@ export component Field inherits VerticalLayout {
     in property <bool> enabled: true;
     in-out property <string> value;
     spacing: 7px;
-    Text { text: root.label; color: Palette.foreground; font-size: 12px; }
+    Text { text: root.label; color: Palette.foreground; font-size: 13px; }
     LineEdit {
         text <=> root.value;
         enabled: root.enabled;
@@ -68,7 +71,7 @@ export component Field inherits VerticalLayout {
     }
     if root.hint != "": Text {
         text: root.hint;
-        font-size: 11px;
+        font-size: 12px;
         color: UiColors.muted;
         wrap: word-wrap;
     }

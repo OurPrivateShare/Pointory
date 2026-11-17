@@ -15,15 +15,14 @@ component Card inherits Rectangle {
 
 component SectionLabel inherits Text {
     color: Palette.foreground;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
     vertical-alignment: center;
 }
 
 component Hint inherits Text {
-    color: Palette.foreground;
-    opacity: 0.62;
-    font-size: 11px;
+    color: UiColors.muted;
+    font-size: 12px;
     wrap: word-wrap;
 }
 
@@ -53,7 +52,7 @@ export component TaskEditor inherits Rectangle {
     callback pick-color();
     callback cancel-picker();
 
-    background: Palette.background;
+    background: UiColors.surface;
     border-radius: 14px;
     border-width: 1px;
     border-color: UiColors.border;

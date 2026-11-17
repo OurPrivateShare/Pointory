@@ -62,11 +62,11 @@ export component AppWindow inherits Window {
     title: "Pointory · 鼠标自动点击器";
     icon: @image-url("../assets/pointory.svg");
     preferred-width: 1060px;
-    preferred-height: 820px;
+    preferred-height: 900px;
     min-width: 920px;
     min-height: 620px;
     background: Palette.background;
-    default-font-size: 13px;
+    default-font-size: 14px;
 
     in-out property <[TaskRow]> task-rows: [];
     in-out property <string> total-count: "1";
@@ -132,7 +132,7 @@ export component AppWindow inherits Window {
                     alignment: center;
                     spacing: 4px;
                     Text { text: "Pointory"; color: Palette.foreground; font-size: 25px; font-weight: 700; }
-                    Text { text: "鼠标自动点击器"; color: UiColors.muted; font-size: 12px; }
+                    Text { text: "鼠标自动点击器"; color: UiColors.muted; font-size: 14px; }
                 }
                 VerticalLayout {
                     width: 182px;
@@ -150,7 +150,7 @@ export component AppWindow inherits Window {
                             Text {
                                 text: root.total-count + " 项任务 · " + root.active-count + " 项运行中";
                                 color: UiColors.success;
-                                font-size: 11px;
+                                font-size: 13px;
                                 font-weight: 500;
                                 vertical-alignment: center;
                                 overflow: elide;
@@ -161,7 +161,7 @@ export component AppWindow inherits Window {
                     HorizontalLayout {
                         spacing: 6px;
                         CenteredImage { source: @image-url("../assets/check.svg"); tint: UiColors.muted; icon-size: 14px; }
-                        Text { text: root.save-status; color: UiColors.muted; font-size: 11px; vertical-alignment: center; horizontal-stretch: 1; }
+                        Text { text: root.save-status; color: UiColors.muted; font-size: 13px; vertical-alignment: center; horizontal-stretch: 1; }
                     }
                 }
                 Rectangle { horizontal-stretch: 1; }
@@ -188,7 +188,7 @@ export component AppWindow inherits Window {
                 Text { text: "任务列表"; color: Palette.foreground; font-size: 17px; font-weight: 700; vertical-alignment: center; }
                 Text {
                     text: root.search-query == "" ? root.total-count + " 项任务" : "显示 " + root.task-rows.length + " / " + root.total-count + " 项";
-                    color: UiColors.muted; font-size: 11px; vertical-alignment: center;
+                    color: UiColors.muted; font-size: 13px; vertical-alignment: center;
                 }
                 Rectangle { horizontal-stretch: 1; }
                 CenteredImage { source: @image-url("../assets/search.svg"); tint: UiColors.muted; }
@@ -206,7 +206,7 @@ export component AppWindow inherits Window {
                     clicked => { root.search-query = ""; }
                 }
                 CenteredDot { dot-color: root.active-count == "0" ? UiColors.subtle : UiColors.success; }
-                Text { text: root.active-count + " 项运行中"; color: UiColors.muted; font-size: 11px; vertical-alignment: center; }
+                Text { text: root.active-count + " 项运行中"; color: UiColors.muted; font-size: 13px; vertical-alignment: center; }
             }
 
             Rectangle {
@@ -223,11 +223,11 @@ export component AppWindow inherits Window {
                         background: Palette.alternate-background;
                         HorizontalLayout {
                             padding-left: 16px; padding-right: 16px; spacing: 16px;
-                            Text { text: "任务 / 基本信息"; color: UiColors.muted; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; }
-                            Text { text: "点击间隔"; width: 110px; color: UiColors.muted; font-size: 12px; vertical-alignment: center; }
-                            Text { text: "快捷键"; width: 100px; color: UiColors.muted; font-size: 12px; vertical-alignment: center; }
-                            Text { text: "状态 / 点击数"; width: 120px; color: UiColors.muted; font-size: 12px; vertical-alignment: center; }
-                            Text { text: "操作"; width: 240px; color: UiColors.muted; font-size: 12px; vertical-alignment: center; }
+                            Text { text: "任务 / 基本信息"; color: UiColors.muted; font-size: 14px; vertical-alignment: center; horizontal-stretch: 1; }
+                            Text { text: "点击间隔"; width: 110px; color: UiColors.muted; font-size: 14px; vertical-alignment: center; }
+                            Text { text: "快捷键"; width: 100px; color: UiColors.muted; font-size: 14px; vertical-alignment: center; }
+                            Text { text: "状态 / 点击数"; width: 120px; color: UiColors.muted; font-size: 14px; vertical-alignment: center; }
+                            Text { text: "操作"; width: 240px; color: UiColors.muted; font-size: 14px; vertical-alignment: center; }
                         }
                     }
                     ScrollView {
@@ -237,7 +237,7 @@ export component AppWindow inherits Window {
                             spacing: 0px;
                             alignment: start;
                             for task in root.task-rows: Rectangle {
-                                height: 104px;
+                                height: 116px;
                                 background: task.running ? UiColors.accent-soft : Palette.control-background;
                                 Rectangle { y: parent.height - 1px; height: 1px; background: UiColors.border; }
                                 HorizontalLayout {
@@ -247,33 +247,33 @@ export component AppWindow inherits Window {
                                         spacing: 7px;
                                         HorizontalLayout {
                                             spacing: 8px;
-                                            Text { text: task.name; color: Palette.foreground; font-size: 15px; font-weight: 600; overflow: elide; horizontal-stretch: 1; vertical-alignment: center; }
+                                            Text { text: task.name; color: Palette.foreground; font-size: 17px; font-weight: 600; overflow: elide; horizontal-stretch: 1; vertical-alignment: center; }
                                             if task.builtin: Rectangle {
                                                 width: 36px; height: 21px; border-radius: 4px; background: UiColors.accent-soft;
-                                                Text { text: "内置"; color: Palette.accent-background; font-size: 11px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                                                Text { text: "内置"; color: Palette.accent-background; font-size: 13px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
                                             }
                                         }
-                                        Text { text: task.button + " · " + (task.builtin ? "坐标：跟随鼠标" : task.target); color: UiColors.muted; font-size: 12px; overflow: elide; }
+                                        Text { text: task.button + " · " + (task.builtin ? "坐标：跟随鼠标" : task.target); color: UiColors.muted; font-size: 14px; overflow: elide; }
                                         HorizontalLayout {
                                             spacing: 5px;
-                                            Text { text: task.limit + (task.has-color ? "  |  颜色：" : ""); color: UiColors.muted; font-size: 11px; }
+                                            Text { text: task.limit + (task.has-color ? " · " : ""); color: UiColors.muted; font-size: 13px; }
                                             if task.has-color: CenteredDot { dot-size: 8px; dot-color: task.swatch; dot-border-width: 1px; dot-border-color: UiColors.border; }
                                             Text {
                                                 text: (task.has-color ? task.color + "±" + task.color-tolerance : "") + (task.include-in-batch ? " · 批量" : "");
-                                                color: UiColors.muted; font-size: 11px; overflow: elide; horizontal-stretch: 1;
+                                                color: UiColors.muted; font-size: 13px; overflow: elide; horizontal-stretch: 1;
                                             }
                                         }
                                     }
-                                    Text { text: task.interval; width: 110px; color: Palette.foreground; font-size: 12px; vertical-alignment: center; wrap: word-wrap; }
-                                    Text { text: task.hotkey == "" ? "未设置" : task.hotkey; width: 100px; color: task.hotkey == "" ? UiColors.subtle : Palette.foreground; font-size: 12px; font-italic: task.hotkey == ""; vertical-alignment: center; wrap: word-wrap; }
+                                    Text { text: task.interval; width: 110px; color: Palette.foreground; font-size: 14px; vertical-alignment: center; wrap: word-wrap; }
+                                    Text { text: task.hotkey == "" ? "未设置" : task.hotkey; width: 100px; color: task.hotkey == "" ? UiColors.muted : Palette.foreground; font-size: 14px; vertical-alignment: center; wrap: word-wrap; }
                                     VerticalLayout {
                                         width: 120px; alignment: center; spacing: 8px;
                                         HorizontalLayout {
                                             spacing: 6px;
                                             CenteredDot { dot-color: task.running ? UiColors.success : UiColors.subtle; }
-                                            Text { text: task.state; color: task.running ? UiColors.success : Palette.foreground; font-size: 12px; overflow: elide; horizontal-stretch: 1; }
+                                            Text { text: task.state; color: task.running ? UiColors.success : Palette.foreground; font-size: 14px; overflow: elide; horizontal-stretch: 1; }
                                         }
-                                        Text { text: "已点击 " + task.clicks + " 次"; color: UiColors.muted; font-size: 11px; }
+                                        Text { text: "已点击 " + task.clicks + " 次"; color: UiColors.muted; font-size: 13px; }
                                     }
                                     HorizontalLayout {
                                         width: 240px; spacing: 8px; alignment: start;
@@ -302,7 +302,7 @@ export component AppWindow inherits Window {
                                 VerticalLayout {
                                     alignment: center; spacing: 12px; padding: 30px;
                                     Text { text: "没有匹配的任务"; color: Palette.foreground; font-size: 15px; font-weight: 600; horizontal-alignment: center; }
-                                    Text { text: "试试其他名称、坐标或快捷键"; color: UiColors.muted; font-size: 12px; horizontal-alignment: center; }
+                                    Text { text: "试试其他名称、坐标或快捷键"; color: UiColors.muted; font-size: 14px; horizontal-alignment: center; }
                                     HorizontalLayout {
                                         alignment: center;
                                         UiButton { label: "清除搜索"; primary: true; enabled: root.list-enabled; clicked => { root.search-query = ""; } }
@@ -322,9 +322,9 @@ export component AppWindow inherits Window {
         VerticalLayout {
             padding-left: 22px; padding-right: 22px; padding-top: 14px; padding-bottom: 14px;
             spacing: 6px;
-            Text { text: root.status-message; color: Palette.foreground; font-size: 11px; wrap: word-wrap; }
-            if root.hotkey-warning != "": Text { text: root.hotkey-warning; color: UiColors.danger; font-size: 11px; wrap: word-wrap; }
-            Text { text: "任务快捷键：开始 / 停止   |   Ctrl + Alt + Esc：全部停止   |   批量运行：启动已加入批量的任务"; color: UiColors.muted; font-size: 11px; wrap: word-wrap; }
+            Text { text: root.status-message; color: Palette.foreground; font-size: 13px; wrap: word-wrap; }
+            if root.hotkey-warning != "": Text { text: root.hotkey-warning; color: UiColors.danger; font-size: 13px; wrap: word-wrap; }
+            Text { text: "任务快捷键：开始 / 停止   |   Ctrl + Alt + Esc：全部停止   |   批量运行：启动已加入批量的任务"; color: UiColors.muted; font-size: 13px; wrap: word-wrap; }
         }
     }
 
@@ -370,10 +370,10 @@ export component AppWindow inherits Window {
             TouchArea { scroll-event(event) => { return accept; } }
         }
         Rectangle {
-            width: 440px; height: 230px;
+            width: 480px; height: 250px;
             x: (parent.width - self.width) / 2;
             y: (parent.height - self.height) / 2;
-            background: Palette.control-background;
+            background: UiColors.surface;
             border-radius: 12px; border-width: 1px; border-color: UiColors.border;
             FocusScope {
                 init => { self.focus(); }
@@ -383,11 +383,12 @@ export component AppWindow inherits Window {
                 }
                 VerticalLayout {
                     padding: 24px; spacing: 16px;
-                    Text { text: "删除任务"; color: Palette.foreground; font-size: 19px; font-weight: 600; }
-                    Text { text: "确定删除“" + root.delete-name + "”？"; color: Palette.foreground; font-size: 13px; overflow: elide; }
-                    Text { text: "删除后无法恢复。"; color: UiColors.muted; font-size: 12px; }
+                    Text { text: "删除任务"; color: Palette.foreground; font-size: 20px; font-weight: 600; }
+                    Text { text: "确定删除“" + root.delete-name + "”？"; color: Palette.foreground; font-size: 14px; overflow: elide; }
+                    Text { text: "删除后无法恢复。"; color: UiColors.muted; font-size: 14px; }
                     Rectangle { vertical-stretch: 1; }
                     HorizontalLayout {
+                        height: 40px;
                         spacing: 10px;
                         Rectangle { horizontal-stretch: 1; }
                         UiButton { label: "取消"; width: 84px; clicked => { root.cancel-delete(); } }
@@ -406,7 +407,7 @@ export component NoticeWindow inherits Window {
     preferred-height: 230px;
     min-width: 400px;
     min-height: 230px;
-    background: Palette.background;
+    background: UiColors.surface;
     in property <string> message;
     callback dismiss();
     FocusScope {
@@ -434,13 +435,13 @@ export component MagnifierWindow inherits Window {
     height: 210px;
     no-frame: true;
     always-on-top: true;
-    background: Palette.background;
+    background: UiColors.surface;
     default-font-size: 12px;
     in property <string> preview-position;
     in property <image> magnifier-image;
     in property <string> error-message: "";
     Rectangle {
-        border-width: 1px; border-color: Palette.border; background: Palette.background;
+        border-width: 1px; border-color: Palette.border; background: UiColors.surface;
         VerticalLayout {
             padding: 10px; spacing: 6px;
             HorizontalLayout {

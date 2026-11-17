@@ -87,7 +87,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let save_status = if load_error.is_some() {
         "读取异常"
-    } else if persistence::config_path().is_file() {
+    } else if persistence::config_path().is_ok_and(|path| path.is_file()) {
         "已保存"
     } else {
         "默认设置"
